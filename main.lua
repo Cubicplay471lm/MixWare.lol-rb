@@ -1,9 +1,9 @@
 --[[
-    MixWare.lol v2.1
+    MixWare.lol v2.2
     Combat → AimBot | Trigger
     Visuals → Enemies | Items | Inventory | World | Crosshair
     Misc → Misc | Config | Menu
-    Новое в 2.1: Weapon Name, Distance Fade, Custom Crosshair
+    Новое в 2.2: Target Line (линия от прицела к цели аима)
 --]]
 
 --=====================================================================
@@ -38,7 +38,7 @@ local LocalPlayer = Players.LocalPlayer
 local Camera      = Workspace.CurrentCamera
 
 --=====================================================================
--- ТЁМНО-ФИОЛЕТОВАЯ ПАЛИТРА
+-- ПАЛИТРА
 --=====================================================================
 local Theme = {
     Bg      = Color3.fromRGB(18, 14, 26),
@@ -73,32 +73,23 @@ local Settings = {
         TracerEnabled = false, TracerColor = Color3.fromRGB(200, 100, 255),
         TracerOrigin = "Bottom",
         NameEnabled = true, DistanceEnabled = true, MaxDistance = 1000,
-
         VisibleCheck = false,
         VisibleColor = Color3.fromRGB(200, 130, 255),
-
         SkeletonEnabled = false,
         SkeletonColor = Color3.fromRGB(200, 130, 255),
         SkeletonThickness = 1,
-
         HealthBarEnabled = false,
         HealthBarWidth = 50,
         HealthBarHeight = 4,
-
         NametagsEnabled = false,
         NametagsShowHP = true,
         NametagsShowDist = true,
-
         ArrowsEnabled = false,
         ArrowsColor = Color3.fromRGB(200, 130, 255),
         ArrowsSize = 14,
-
-        -- NEW 2.1
         WeaponNameEnabled = false,
         WeaponNameColor = Color3.fromRGB(255, 180, 220),
         WeaponNameSize = 12,
-
-        -- Distance Fade
         DistanceFade = false,
         DistanceFadeStart = 0.7,
     },
@@ -160,6 +151,15 @@ local Settings = {
         HeadMoverDistance = 30,
         HeadMoverOnlyAimKey = true,
         HeadMoverSpeed = 1.0,
+
+        -- NEW v2.2: Target Line
+        TargetLine = false,
+        TargetLineColor = Color3.fromRGB(255, 100, 200),
+        TargetLineThickness = 1,
+        TargetLineTransparency = 0.2,
+        TargetLineOnlyAiming = true,
+        TargetLineStyle = "Solid",       -- Solid | Dashed
+        TargetLineDashCount = 8,
     },
     Trigger = {
         Enabled = false, Delay = 0.05,
@@ -468,7 +468,7 @@ local function createESPStruct()
     d.nametag.Center = true; d.nametag.Outline = true; d.nametag.Size = 12
     d.arrow = newDrawing("Triangle")
     d.arrow.Filled = true
-    d.weapon = newDrawing("Text")     -- NEW
+    d.weapon = newDrawing("Text")
     d.weapon.Center = true
     d.weapon.Outline = true
     return d
@@ -588,7 +588,6 @@ local function drawArrow(d, worldPos, color, size)
     d.arrow.Color = color; d.arrow.Filled = true; d.arrow.Visible = true
 end
 
--- Distance Fade: линейная зависимость, alpha = 1 до FadeStart, потом падает к 0
 local function getFadeAlpha(dist, maxDist)
     if not Settings.ESP.DistanceFade then return 1 end
     local fadeStart = maxDist * math.clamp(Settings.ESP.DistanceFadeStart, 0.1, 1)
@@ -598,10 +597,8 @@ local function getFadeAlpha(dist, maxDist)
 end
 
 local function getWeaponName(model)
-    -- Tool в Character (что в руке)
     local tool = model:FindFirstChildWhichIsA("Tool")
     if tool then return tool.Name end
-    -- Или ищем в руки (R15 - RightHand)
     local rh = model:FindFirstChild("RightHand") or model:FindFirstChild("Right Arm")
     if rh then
         for _, child in ipairs(rh:GetChildren()) do
@@ -663,7 +660,6 @@ local function drawESPForModel(model, plr)
     local x      = topScreen.X - width / 2
     local y      = topScreen.Y
 
-    -- BOX
     if Settings.ESP.BoxEnabled then
         d.box.Size = Vector2.new(width, height)
         d.box.Position = Vector2.new(x, y)
@@ -673,7 +669,6 @@ local function drawESPForModel(model, plr)
         d.box.Filled = false; d.box.Visible = true
     else d.box.Visible = false end
 
-    -- CORNERS
     if Settings.ESP.CornerEnabled then
         local L, t = Settings.ESP.CornerLength, Settings.ESP.CornerThickness
         local pts = {
@@ -695,7 +690,6 @@ local function drawESPForModel(model, plr)
         end
     else for _, c in pairs(d.corners) do c.Visible = false end end
 
-    -- 3D BOX
     if Settings.ESP.Box3DEnabled then
         local edges = {{1,2},{3,4},{5,6},{7,8},{1,3},{2,4},{5,7},{6,8},{1,5},{2,6},{3,7},{4,8}}
         local corners = {}
@@ -724,7 +718,6 @@ local function drawESPForModel(model, plr)
         end
     else for _, l in pairs(d.box3d) do l.Visible = false end end
 
-    -- TRACER
     if Settings.ESP.TracerEnabled then
         local vp = Camera.ViewportSize
         local origin
@@ -739,7 +732,6 @@ local function drawESPForModel(model, plr)
         d.tracer.Visible = true
     else d.tracer.Visible = false end
 
-    -- NAME + DIST
     local displayName = model.Name
     if plr then displayName = (plr.DisplayName ~= "" and plr.DisplayName) or plr.Name end
     d.name.Text = displayName
@@ -754,7 +746,6 @@ local function drawESPForModel(model, plr)
     d.dist.Transparency = alpha
     d.dist.Visible = Settings.ESP.DistanceEnabled
 
-    -- WEAPON NAME (сверху над всем)
     if Settings.ESP.WeaponNameEnabled then
         local wName = getWeaponName(model)
         if wName then
@@ -762,8 +753,7 @@ local function drawESPForModel(model, plr)
             d.weapon.Position = Vector2.new(x + width/2, y - 30)
             d.weapon.Color = fWeaponColor
             d.weapon.Size = Settings.ESP.WeaponNameSize
-            d.weapon.Transparency = alpha
-            d.weapon.Visible = true
+            d.weapon.Transparency = alpha            d.weapon.Visible = true
         else
             d.weapon.Visible = false
         end
@@ -771,13 +761,11 @@ local function drawESPForModel(model, plr)
         d.weapon.Visible = false
     end
 
-    -- SKELETON
     if Settings.ESP.SkeletonEnabled then
         drawSkeleton(model, d, fSkelColor, Settings.ESP.SkeletonThickness)
         for _, l in pairs(d.skeleton) do l.Transparency = alpha end
     else for _, l in pairs(d.skeleton) do l.Visible = false end end
 
-    -- HEALTH BAR
     if Settings.ESP.HealthBarEnabled and hum then
         local hpRatio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
         local barW = Settings.ESP.HealthBarWidth
@@ -800,7 +788,6 @@ local function drawESPForModel(model, plr)
         d.hpBg.Visible = false; d.hpFill.Visible = false
     end
 
-    -- NAMETAG
     if Settings.ESP.NametagsEnabled and hum then
         local parts = {}
         if Settings.ESP.NametagsShowHP then
@@ -816,7 +803,6 @@ local function drawESPForModel(model, plr)
         d.nametag.Visible = true
     else d.nametag.Visible = false end
 
-    -- ARROWS
     if Settings.ESP.ArrowsEnabled then
         local headPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
         if headPart then drawArrow(d, headPart.Position, fArrowColor, Settings.ESP.ArrowsSize) end
@@ -859,7 +845,6 @@ end
 -- CROSSHAIR
 --=====================================================================
 local CrosshairParts = nil
-
 local function initCrosshair()
     CrosshairParts = {
         line1 = newDrawing("Line"),
@@ -868,7 +853,6 @@ local function initCrosshair()
         line4 = newDrawing("Line"),
         dot   = newDrawing("Square"),
         circle = newDrawing("Circle"),
-        -- outlines
         o1 = newDrawing("Line"),
         o2 = newDrawing("Line"),
         o3 = newDrawing("Line"),
@@ -896,7 +880,6 @@ local function drawCrosshair()
     end
 
     if c.Style == "Cross" then
-        -- vertical top/bottom + horizontal left/right
         setLine(CrosshairParts.line1, Vector2.new(center.X, center.Y - gap - len),
             Vector2.new(center.X, center.Y - gap), c.Color, thick)
         setLine(CrosshairParts.line2, Vector2.new(center.X, center.Y + gap),
@@ -905,7 +888,6 @@ local function drawCrosshair()
             Vector2.new(center.X - gap, center.Y), c.Color, thick)
         setLine(CrosshairParts.line4, Vector2.new(center.X + gap, center.Y),
             Vector2.new(center.X + gap + len, center.Y), c.Color, thick)
-        -- outlines
         if c.Outline then
             local oc = c.OutlineColor
             setLine(CrosshairParts.o1, Vector2.new(center.X - 1, center.Y - gap - len),
@@ -925,7 +907,6 @@ local function drawCrosshair()
         CrosshairParts.circle.Visible = false
 
     elseif c.Style == "Crosshair" then
-        -- 4 короткие линии, как в CS
         local shortLen = len * 0.6
         setLine(CrosshairParts.line1, Vector2.new(center.X, center.Y - gap),
             Vector2.new(center.X, center.Y - gap - shortLen), c.Color, thick)
@@ -971,7 +952,6 @@ local function drawCrosshair()
         CrosshairParts.circle.Visible = false
     end
 
-    -- Dot в центре (для всех стилей если включено)
     if c.Dot then
         local size = c.DotSize
         CrosshairParts.dot.Size = Vector2.new(size, size)
@@ -982,6 +962,113 @@ local function drawCrosshair()
         CrosshairParts.dot.Visible = true
     else
         CrosshairParts.dot.Visible = false
+    end
+end
+
+--=====================================================================
+-- TARGET LINE (от прицела к цели аима)
+--=====================================================================
+local TargetLinePool = {}      -- пул линий для dashed режима
+local TargetLineSingle = newDrawing("Line")   -- для solid режима
+local TargetLineLastTarget = nil
+
+-- Получить точку-цель для Target Line (кость выбранная в Aim)
+local function getTargetLineEndpoint(part)
+    if not part then return nil end
+    -- Точка нацеливания = позиция кости (Head/Torso/Nearest)
+    -- Если включен AimAtHitPoint — используем hit point
+    if Settings.Aim.AimAtHitPoint then
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { LocalPlayer.Character, Camera }
+        local res = Workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, params)
+        if res and res.Instance and res.Instance:IsDescendantOf(part.Parent) then
+            return res.Position
+        end
+    end
+    return part.Position
+end
+
+-- Инициализация пула dashed-линий
+local function ensureTargetLinePool(count)
+    while #TargetLinePool < count do
+        table.insert(TargetLinePool, newDrawing("Line"))
+    end
+    while #TargetLinePool > count do
+        local ln = table.remove(TargetLinePool)
+        pcall(function() ln.Visible = false end)
+    end
+end
+
+local function drawTargetLine()
+    if not Settings.Aim.TargetLine then
+        TargetLineSingle.Visible = false
+        for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
+        return
+    end
+    -- Только при активном аиме (aim-key зажат)
+    if Settings.Aim.TargetLineOnlyAiming and not isAimKeyDown() then
+        TargetLineSingle.Visible = false
+        for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
+        return
+    end
+
+    -- Есть ли текущая цель?
+    local t = currentTarget
+    if not t then
+        TargetLineSingle.Visible = false
+        for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
+        return
+    end
+
+    local model, part = resolveAimTarget(t)
+    if not part then
+        TargetLineSingle.Visible = false
+        for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
+        return
+    end
+
+    -- Точки: от центра экрана (прицела) до цели
+    local center = getFOVOrigin()
+    local worldPos = getTargetLineEndpoint(part) or part.Position
+    local screen, on = worldToScreen(worldPos)
+    if not on then
+        TargetLineSingle.Visible = false
+        for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
+        return
+    end
+
+    local color = Settings.Aim.TargetLineColor
+    local thickness = Settings.Aim.TargetLineThickness
+    local transp = Settings.Aim.TargetLineTransparency
+    local style = Settings.Aim.TargetLineStyle
+
+    if style == "Dashed" then
+        TargetLineSingle.Visible = false
+        local count = math.clamp(Settings.Aim.TargetLineDashCount, 2, 20)
+        ensureTargetLinePool(count)
+        local total = (screen - center)
+        for i = 1, count do
+            local ln = TargetLinePool[i]
+            -- каждая линия = половина сегмента
+            local a1 = (i - 1) / count
+            local a2 = (i - 0.5) / count
+            ln.From = center + total * a1
+            ln.To   = center + total * a2
+            ln.Color = color
+            ln.Thickness = thickness
+            ln.Transparency = transp
+            ln.Visible = true
+        end
+    else
+        -- Solid
+        for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
+        TargetLineSingle.From = center
+        TargetLineSingle.To = screen
+        TargetLineSingle.Color = color
+        TargetLineSingle.Thickness = thickness
+        TargetLineSingle.Transparency = transp
+        TargetLineSingle.Visible = true
     end
 end
 
@@ -1630,7 +1717,7 @@ task.spawn(function()
         local time = os.date("%H:%M:%S")
         local playerCount = #Players:GetPlayers()
         WmText.Text = string.format(
-            "  MixWare.lol v2.1   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+            "  MixWare.lol v2.2   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
             ActiveConfigName, time, fps, ping, playerCount)
         task.wait(0.5)
     end
@@ -1845,7 +1932,7 @@ local function updateInventoryESP()
 end
 
 --=====================================================================
--- UI REGISTRY + CONTROLS
+-- UI REGISTRY
 --=====================================================================
 local UIRefs = {}
 local function registerUI(path, applyFn) UIRefs[path] = { apply = applyFn } end
@@ -1895,7 +1982,7 @@ TitleGrad.Color = ColorSequence.new({
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -80, 1, 0); Title.Position = UDim2.new(0, 14, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "MixWare.lol  •  v2.1"
+Title.Text = "MixWare.lol  •  v2.2"
 Title.TextColor3 = Theme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -2306,6 +2393,16 @@ makeToggle(AimPage, "Aim At Hit Point", "Aim.AimAtHitPoint")
 makeToggle(AimPage, "Prediction", "Aim.Prediction")
 makeSlider(AimPage, "Prediction Factor", 0.5, 3, "Aim.PredictionFactor")
 makeSlider(AimPage, "Sticky Multiplier", 1, 4, "Aim.StickyMultiplier")
+
+-- NEW v2.2: Target Line
+makeToggle(AimPage, "Target Line", "Aim.TargetLine")
+makeColorPicker(AimPage, "Target Line Color", "Aim.TargetLineColor")
+makeSlider(AimPage, "Target Line Thickness", 1, 5, "Aim.TargetLineThickness")
+makeSlider(AimPage, "Target Line Transparency", 0, 1, "Aim.TargetLineTransparency")
+makeDropdown(AimPage, "Target Line Style", {"Solid", "Dashed"}, "Aim.TargetLineStyle")
+makeSlider(AimPage, "Dash Count", 2, 20, "Aim.TargetLineDashCount")
+makeToggle(AimPage, "Target Line Only When Aiming", "Aim.TargetLineOnlyAiming")
+
 makeToggle(AimPage, "Head Mover (silent)", "Aim.HeadMover", function(v)
     if v then startHeadMover() else stopHeadMover() end
 end)
@@ -2396,8 +2493,6 @@ makeToggle(EnemiesPage, "Nametag Distance", "ESP.NametagsShowDist")
 makeToggle(EnemiesPage, "Off-screen Arrows", "ESP.ArrowsEnabled")
 makeColorPicker(EnemiesPage, "Arrows Color", "ESP.ArrowsColor")
 makeSlider(EnemiesPage, "Arrows Size", 8, 24, "ESP.ArrowsSize")
-
--- NEW 2.1
 makeToggle(EnemiesPage, "Weapon Name", "ESP.WeaponNameEnabled")
 makeColorPicker(EnemiesPage, "Weapon Name Color", "ESP.WeaponNameColor")
 makeSlider(EnemiesPage, "Weapon Name Size", 8, 20, "ESP.WeaponNameSize")
@@ -2837,6 +2932,7 @@ local function UNLOAD()
     ESPData = {}
     for _, obj in ipairs(AllDrawings) do pcall(function() obj:Remove() end) end
     AllDrawings = {}
+    TargetLinePool = {}
     pcall(function() ScreenGui:Destroy() end)
     if getgenv() then getgenv().MixWare_Unloaded = true end
 end
@@ -2865,6 +2961,7 @@ addConn(RunService.RenderStepped:Connect(function()
     else for _, d in pairs(ESPData) do hideAllESP(d) end end
 
     drawCrosshair()
+    drawTargetLine()
 
     if Settings.ItemESP.Enabled then
         drawItemESPGeneric(ItemDrawings, Settings.ItemESP.FolderPath,
@@ -2914,7 +3011,6 @@ MinBtn.MouseButton1Click:Connect(function()
     if minimized then
         savedSize = Main.Size
         Main.Size = UDim2.new(0, 700, 0, 34)
-        TabHolder = ContentHolder
         ContentHolder.Visible = false
         SearchBar.Visible = false
     else
@@ -2927,4 +3023,4 @@ CloseBtn.MouseButton1Click:Connect(function()
     Settings.UI.Open = false; Main.Visible = false
 end)
 
-notify("MixWare.lol v2.1 loaded! Mode " .. Settings.Mode, Theme.Accent)
+notify("MixWare.lol v2.2 loaded! Mode " .. Settings.Mode, Theme.Accent)
