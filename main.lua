@@ -2061,7 +2061,10 @@ M.Title.TextXAlignment = Enum.TextXAlignment.Left
 M.MinBtn = Instance.new("TextButton", M.TitleBar)
 M.MinBtn.Size = UDim2.new(0, 24, 0, 24); M.MinBtn.Position = UDim2.new(1, -60, 0, 5)
 M.MinBtn.BackgroundColor3 = Theme.Panel
-M.MinBtn.Text = "—"; M.MinBtn.TextColor3 = Theme.TextM.MinBtn.Font = Enum.Font.GothamBold; M.MinBtn.TextSize = 12
+M.MinBtn.Text = "—"
+M.MinBtn.TextColor3 = Theme.Text
+M.MinBtn.Font = Enum.Font.GothamBold
+M.MinBtn.TextSize = 12
 M.MinBtn.BorderSizePixel = 0
 Instance.new("UICorner", M.MinBtn).CornerRadius = UDim.new(0, 5)
 
