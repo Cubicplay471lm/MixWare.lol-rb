@@ -1,9 +1,20 @@
 --[[
-    MixWare.lol v2.2
+    MixWare.lol v2.6
+    ============================================================
     Combat → AimBot | Trigger
     Visuals → Enemies | Items | Inventory | World | Crosshair
     Misc → Misc | Config | Menu
-    Новое в 2.2: Target Line (линия от прицела к цели аима)
+    ============================================================
+    Новое в 2.6:
+      - Aim: Ground Only, Debug Visuals (всегда)
+      - Enemies: Health Bar вертикальный слева, Behind-Wall Pulse,
+                 Name Shadow
+      - Items: выпадающий список с чекбоксами для выбора предметов
+      - World: Remove Grass
+      - Crosshair: Rainbow, Sun (8 лучей)
+      - Menu: темы (5), масштаб (3), тосты снизу
+      - Фикс: Infinite Jump надёжное отключение
+      - Фикс: Chams с Adornee
 --]]
 
 --=====================================================================
@@ -38,7 +49,7 @@ local LocalPlayer = Players.LocalPlayer
 local Camera      = Workspace.CurrentCamera
 
 --=====================================================================
--- ПАЛИТРА
+-- ПАЛИТРА (базовая — темы применяются поверх)
 --=====================================================================
 local Theme = {
     Bg      = Color3.fromRGB(18, 14, 26),
@@ -56,11 +67,69 @@ local Theme = {
 }
 
 --=====================================================================
+-- THEMES PRESETS
+--=====================================================================
+local Themes = {
+    Purple = {
+        Bg=Color3.fromRGB(18,14,26), Bg2=Color3.fromRGB(26,18,38),
+        Panel=Color3.fromRGB(38,26,54), Row=Color3.fromRGB(44,30,62),
+        Title=Color3.fromRGB(40,26,58),
+        Accent=Color3.fromRGB(160,90,255), Accent2=Color3.fromRGB(220,120,255),
+        Text=Color3.fromRGB(235,225,250), TextDim=Color3.fromRGB(160,140,190),
+        Good=Color3.fromRGB(180,100,255), Bad=Color3.fromRGB(220,70,130),
+        Stroke=Color3.fromRGB(85,55,130),
+    },
+    Dark = {
+        Bg=Color3.fromRGB(15,15,18), Bg2=Color3.fromRGB(22,22,26),
+        Panel=Color3.fromRGB(32,32,38), Row=Color3.fromRGB(38,38,44),
+        Title=Color3.fromRGB(34,34,40),
+        Accent=Color3.fromRGB(90,140,240), Accent2=Color3.fromRGB(140,180,255),
+        Text=Color3.fromRGB(230,230,240), TextDim=Color3.fromRGB(140,140,150),
+        Good=Color3.fromRGB(90,140,240), Bad=Color3.fromRGB(210,70,90),
+        Stroke=Color3.fromRGB(60,60,70),
+    },
+    Blue = {
+        Bg=Color3.fromRGB(12,18,30), Bg2=Color3.fromRGB(18,26,42),
+        Panel=Color3.fromRGB(26,40,62), Row=Color3.fromRGB(32,48,74),
+        Title=Color3.fromRGB(28,44,68),
+        Accent=Color3.fromRGB(60,140,255), Accent2=Color3.fromRGB(120,190,255),
+        Text=Color3.fromRGB(220,235,255), TextDim=Color3.fromRGB(140,170,210),
+        Good=Color3.fromRGB(60,140,255), Bad=Color3.fromRGB(220,80,110),
+        Stroke=Color3.fromRGB(60,100,150),
+    },
+    Red = {
+        Bg=Color3.fromRGB(20,12,14), Bg2=Color3.fromRGB(30,16,20),
+        Panel=Color3.fromRGB(46,22,26), Row=Color3.fromRGB(56,28,32),
+        Title=Color3.fromRGB(50,24,30),
+        Accent=Color3.fromRGB(230,70,90), Accent2=Color3.fromRGB(255,130,150),
+        Text=Color3.fromRGB(250,230,235), TextDim=Color3.fromRGB(200,150,160),
+        Good=Color3.fromRGB(230,70,90), Bad=Color3.fromRGB(255,50,60),
+        Stroke=Color3.fromRGB(120,50,60),
+    },
+    Pink = {
+        Bg=Color3.fromRGB(24,14,22), Bg2=Color3.fromRGB(36,20,32),
+        Panel=Color3.fromRGB(54,28,48), Row=Color3.fromRGB(66,34,58),
+        Title=Color3.fromRGB(58,30,52),
+        Accent=Color3.fromRGB(255,110,180), Accent2=Color3.fromRGB(255,170,220),
+        Text=Color3.fromRGB(250,225,240), TextDim=Color3.fromRGB(200,150,180),
+        Good=Color3.fromRGB(255,110,180), Bad=Color3.fromRGB(230,60,120),
+        Stroke=Color3.fromRGB(140,70,110),
+    },
+}
+
+--=====================================================================
+-- ЗАХАРДКОЖЕННЫЕ ПУТИ
+--=====================================================================
+local ITEM_ESP_PATHS = {
+    "Workspace.Spawned.MouselgnoreFolder.Loot",
+    "Workspace.Spawned.Destructibles",
+}
+
+--=====================================================================
 -- НАСТРОЙКИ
 --=====================================================================
 local Settings = {
-    Mode = 2,
-    Target = { CharactersFolder = "Characters" },
+    Mode = 1,
 
     ESP = {
         Enabled = false, ChamsEnabled = false,
@@ -79,8 +148,9 @@ local Settings = {
         SkeletonColor = Color3.fromRGB(200, 130, 255),
         SkeletonThickness = 1,
         HealthBarEnabled = false,
-        HealthBarWidth = 50,
-        HealthBarHeight = 4,
+        HealthBarWidth = 4,
+        HealthBarHeight = 40,
+        HealthBarOffset = 6,
         NametagsEnabled = false,
         NametagsShowHP = true,
         NametagsShowDist = true,
@@ -92,6 +162,13 @@ local Settings = {
         WeaponNameSize = 12,
         DistanceFade = false,
         DistanceFadeStart = 0.7,
+        -- Behind-Wall Pulse
+        PulseEnabled = false,
+        PulseSpeed = 1.5,
+        PulseMin = 0.35,
+        PulseMax = 0.85,
+        -- Name Shadow
+        NameShadow = false,
     },
     Crosshair = {
         Enabled = false,
@@ -105,17 +182,18 @@ local Settings = {
         DotSize = 2,
         CircleRadius = 12,
         Outline = true,
+        Rainbow = false,
     },
     ItemESP = {
         Enabled = false,
-        FolderPath = "Workspace.Items",
         Color = Color3.fromRGB(220, 180, 100),
         MaxDistance = 500,
         TextEnabled = true,
+        RefreshRate = 0.2,
+        SelectedItems = {},  -- [name] = true/false
     },
     WorldESP = {
         Enabled = false,
-        FolderPath = "Workspace.WorldItems",
         Color = Color3.fromRGB(120, 220, 200),
         MaxDistance = 500,
         TextEnabled = true,
@@ -131,9 +209,10 @@ local Settings = {
         CameraFOV = 70,
         DisableSunRays = false,
         DisableAtmosphere = false,
+        RemoveGrass = false,
     },
     InvESP = {
-        Enabled = false, Transparency = 0.35, ShowLocal = false,
+        Enabled = false, Transparency = 0.35, ShowLocal = true,
         FontSize = 14, ShowTools = true, ShowHealth = true,
         RefreshInterval = 0.25,
     },
@@ -151,15 +230,16 @@ local Settings = {
         HeadMoverDistance = 30,
         HeadMoverOnlyAimKey = true,
         HeadMoverSpeed = 1.0,
-
-        -- NEW v2.2: Target Line
         TargetLine = false,
         TargetLineColor = Color3.fromRGB(255, 100, 200),
         TargetLineThickness = 1,
         TargetLineTransparency = 0.2,
         TargetLineOnlyAiming = true,
-        TargetLineStyle = "Solid",       -- Solid | Dashed
+        TargetLineStyle = "Solid",
         TargetLineDashCount = 8,
+        -- NEW 2.6
+        GroundOnly = false,
+        DebugVisuals = false,
     },
     Trigger = {
         Enabled = false, Delay = 0.05,
@@ -180,13 +260,59 @@ local Settings = {
         Open = true, MenuKey = Enum.KeyCode.RightShift, UnloadKey = Enum.KeyCode.End,
         Watermark = true,
         Notifications = true,
+        Theme = "Purple",
+        Scale = "Medium",
     },
 }
 
 local ActiveConfigName = "none"
 
 --=====================================================================
--- NOTIFICATIONS
+-- ЦВЕТА → HEX
+--=====================================================================
+local function colorToHex(c)
+    if typeof(c) ~= "Color3" then return c end
+    return "#" .. c:ToHex()
+end
+
+local function hexToColor(s)
+    if type(s) ~= "string" then return s end
+    if string.sub(s, 1, 1) ~= "#" then return s end
+    local ok, c = pcall(function() return Color3.fromHex(s) end)
+    if ok then return c end
+    return Color3.new(1,1,1)
+end
+
+local function serializeSettings(tbl)
+    local out = {}
+    for k, v in pairs(tbl) do
+        if typeof(v) == "Color3" then
+            out[k] = colorToHex(v)
+        elseif type(v) == "table" then
+            out[k] = serializeSettings(v)
+        else
+            out[k] = v
+        end
+    end
+    return out
+end
+
+local function deserializeSettings(dst, src)
+    for k, v in pairs(src) do
+        if type(v) == "string" and string.sub(v, 1, 1) == "#" then
+            dst[k] = hexToColor(v)
+        elseif type(v) == "table" and type(dst[k]) == "table" then
+            deserializeSettings(dst[k], v)
+        elseif type(v) == "table" and type(dst[k]) ~= "table" then
+            dst[k] = v
+        else
+            dst[k] = v
+        end
+    end
+end
+
+--=====================================================================
+-- NOTIFICATIONS (снизу справа)
 --=====================================================================
 local NotifyHolder = nil
 local function setupNotifyHolder(screenGui)
@@ -199,7 +325,7 @@ local function setupNotifyHolder(screenGui)
     local layout = Instance.new("UIListLayout", NotifyHolder)
     layout.Padding = UDim.new(0, 6)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.VerticalAlignment = Enum.VerticalAlignment.Top
+    layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 end
 
 local function notify(text, color)
@@ -238,9 +364,6 @@ local function notify(text, color)
     end)
 end
 
---=====================================================================
--- SOUND
---=====================================================================
 local function playSound(id)
     pcall(function()
         local s = Instance.new("Sound")
@@ -354,51 +477,15 @@ local function applyCurve(t, curve)
 end
 
 --=====================================================================
--- MODES
+-- MODE 1
 --=====================================================================
-local function getCharactersFolder()
-    return Workspace:FindFirstChild(Settings.Target.CharactersFolder)
-end
-
-local function getCustomModelForPlayer(plr)
-    if not plr then return nil end
-    local folder = getCharactersFolder()
-    if not folder then return nil end
-    local m = folder:FindFirstChild(plr.Name)
-    if m and m:IsA("Model") then return m end
-    for _, c in ipairs(folder:GetChildren()) do
-        if c:IsA("Model") and (c.Name == plr.DisplayName or c.Name == plr.Name) then
-            return c
-        end
-    end
-    return nil
-end
-
 local function getCharacterForPlayer(plr)
     if not plr then return nil, nil, nil end
-    if Settings.Mode == 1 then
-        local ch = plr.Character
-        if not ch then return nil, nil, nil end
-        local hrp = ch:FindFirstChild("HumanoidRootPart")
-        local hum = ch:FindFirstChildOfClass("Humanoid")
-        return ch, hrp, hum
-    else
-        local model = getCustomModelForPlayer(plr)
-        if not model then return nil, nil, nil end
-        local hrp = model:FindFirstChild("HumanoidRootPart")
-        local hum = model:FindFirstChildOfClass("Humanoid")
-        return model, hrp, hum
-    end
-end
-
-local function modelToPlayer(model)
-    if not model then return nil end
-    local plr = Players:FindFirstChild(model.Name)
-    if plr then return plr end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.DisplayName == model.Name then return p end
-    end
-    return nil
+    local ch = plr.Character
+    if not ch then return nil, nil, nil end
+    local hrp = ch:FindFirstChild("HumanoidRootPart")
+    local hum = ch:FindFirstChildOfClass("Humanoid")
+    return ch, hrp, hum
 end
 
 local function getModelCFrame(model)
@@ -458,7 +545,9 @@ local function createESPStruct()
     d.tracer = newDrawing("Line")
     d.name   = newDrawing("Text")
     d.dist   = newDrawing("Text")
+    d.nameShadow = newDrawing("Text")
     d.name.Center = true; d.name.Outline = true; d.name.Size = 14
+    d.nameShadow.Center = true; d.nameShadow.Outline = false; d.nameShadow.Size = 14
     d.dist.Center = true; d.dist.Outline = true; d.dist.Size = 12
     d.skeleton = {}
     for i = 1, 20 do d.skeleton[i] = newDrawing("Line") end
@@ -482,6 +571,7 @@ local function destroyESPStruct(d)
     pcall(function() d.tracer:Remove() end)
     pcall(function() d.name:Remove() end)
     pcall(function() d.dist:Remove() end)
+    pcall(function() d.nameShadow:Remove() end)
     pcall(function() d.hpBg:Remove() end)
     pcall(function() d.hpFill:Remove() end)
     pcall(function() d.nametag:Remove() end)
@@ -498,6 +588,7 @@ local function hideAllESP(d)
     d.tracer.Visible = false
     d.name.Visible   = false
     d.dist.Visible   = false
+    d.nameShadow.Visible = false
     d.hpBg.Visible   = false
     d.hpFill.Visible = false
     d.nametag.Visible = false
@@ -515,11 +606,17 @@ local function updateChamsForModel(model, isTarget)
     end
     if not model or not model.Parent then return end
     if not d.highlight or not d.highlight.Parent then
-        local h = Instance.new("Highlight")
-        h.Name = "MixWareChams"
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        h.Parent = model
-        d.highlight = h
+        local existing = model:FindFirstChild("MixWareChams")
+        if existing and existing:IsA("Highlight") then
+            d.highlight = existing
+        else
+            local h = Instance.new("Highlight")
+            h.Name = "MixWareChams"
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Adornee = model
+            h.Parent = model
+            d.highlight = h
+        end
     end
     local color
     if isTarget then
@@ -599,13 +696,29 @@ end
 local function getWeaponName(model)
     local tool = model:FindFirstChildWhichIsA("Tool")
     if tool then return tool.Name end
+    for _, child in ipairs(model:GetChildren()) do
+        if child:IsA("Model") then
+            local rh = model:FindFirstChild("RightHand") or model:FindFirstChild("Right Arm")
+            if rh and child:IsDescendantOf(rh) then return child.Name end
+        end
+    end
     local rh = model:FindFirstChild("RightHand") or model:FindFirstChild("Right Arm")
     if rh then
         for _, child in ipairs(rh:GetChildren()) do
-            if child:IsA("Tool") then return child.Name end
+            if child:IsA("Tool") or child:IsA("Model") then return child.Name end
         end
     end
     return nil
+end
+
+-- Пульсация за стеной: вычисляем альфу на основе времени
+local function getPulseAlpha(now)
+    if not Settings.ESP.PulseEnabled then return 1 end
+    local speed = Settings.ESP.PulseSpeed
+    local minA = Settings.ESP.PulseMin
+    local maxA = Settings.ESP.PulseMax
+    local t = (math.sin(now * speed * math.pi * 2) + 1) * 0.5  -- 0..1
+    return minA + (maxA - minA) * t
 end
 
 local lastESPUpdate = 0
@@ -631,6 +744,14 @@ local function drawESPForModel(model, plr)
     if Settings.ESP.VisibleCheck then
         visible = getVisibleStateForModel(model)
     end
+
+    -- Behind-Wall Pulse: если цель НЕ видна и пульсация включена — мерцаем
+    local pulseMul = 1
+    if Settings.ESP.PulseEnabled and Settings.ESP.VisibleCheck and not visible then
+        pulseMul = getPulseAlpha(tick())
+    end
+    alpha = alpha * pulseMul
+
     local override = nil
     if Settings.ESP.VisibleCheck and visible then
         override = Settings.ESP.VisibleColor
@@ -660,6 +781,7 @@ local function drawESPForModel(model, plr)
     local x      = topScreen.X - width / 2
     local y      = topScreen.Y
 
+    -- BOX
     if Settings.ESP.BoxEnabled then
         d.box.Size = Vector2.new(width, height)
         d.box.Position = Vector2.new(x, y)
@@ -669,6 +791,7 @@ local function drawESPForModel(model, plr)
         d.box.Filled = false; d.box.Visible = true
     else d.box.Visible = false end
 
+    -- CORNERS
     if Settings.ESP.CornerEnabled then
         local L, t = Settings.ESP.CornerLength, Settings.ESP.CornerThickness
         local pts = {
@@ -690,6 +813,7 @@ local function drawESPForModel(model, plr)
         end
     else for _, c in pairs(d.corners) do c.Visible = false end end
 
+    -- 3D BOX
     if Settings.ESP.Box3DEnabled then
         local edges = {{1,2},{3,4},{5,6},{7,8},{1,3},{2,4},{5,7},{6,8},{1,5},{2,6},{3,7},{4,8}}
         local corners = {}
@@ -718,6 +842,7 @@ local function drawESPForModel(model, plr)
         end
     else for _, l in pairs(d.box3d) do l.Visible = false end end
 
+    -- TRACER
     if Settings.ESP.TracerEnabled then
         local vp = Camera.ViewportSize
         local origin
@@ -732,10 +857,21 @@ local function drawESPForModel(model, plr)
         d.tracer.Visible = true
     else d.tracer.Visible = false end
 
+    -- NAME + SHADOW
     local displayName = model.Name
     if plr then displayName = (plr.DisplayName ~= "" and plr.DisplayName) or plr.Name end
+    local namePos = Vector2.new(x + width/2, y - 16)
+    if Settings.ESP.NameShadow then
+        d.nameShadow.Text = displayName
+        d.nameShadow.Position = Vector2.new(namePos.X + 1, namePos.Y + 1)
+        d.nameShadow.Color = Color3.new(0, 0, 0)
+        d.nameShadow.Transparency = math.min(1, alpha + 0.2)
+        d.nameShadow.Visible = Settings.ESP.NameEnabled
+    else
+        d.nameShadow.Visible = false
+    end
     d.name.Text = displayName
-    d.name.Position = Vector2.new(x + width/2, y - 16)
+    d.name.Position = namePos
     d.name.Color = fNameColor
     d.name.Transparency = alpha
     d.name.Visible = Settings.ESP.NameEnabled
@@ -746,6 +882,7 @@ local function drawESPForModel(model, plr)
     d.dist.Transparency = alpha
     d.dist.Visible = Settings.ESP.DistanceEnabled
 
+    -- WEAPON NAME
     if Settings.ESP.WeaponNameEnabled then
         local wName = getWeaponName(model)
         if wName then
@@ -753,7 +890,8 @@ local function drawESPForModel(model, plr)
             d.weapon.Position = Vector2.new(x + width/2, y - 30)
             d.weapon.Color = fWeaponColor
             d.weapon.Size = Settings.ESP.WeaponNameSize
-            d.weapon.Transparency = alpha            d.weapon.Visible = true
+            d.weapon.Transparency = alpha
+            d.weapon.Visible = true
         else
             d.weapon.Visible = false
         end
@@ -761,33 +899,59 @@ local function drawESPForModel(model, plr)
         d.weapon.Visible = false
     end
 
+    -- SKELETON
     if Settings.ESP.SkeletonEnabled then
         drawSkeleton(model, d, fSkelColor, Settings.ESP.SkeletonThickness)
         for _, l in pairs(d.skeleton) do l.Transparency = alpha end
     else for _, l in pairs(d.skeleton) do l.Visible = false end end
 
+    -- HEALTH BAR (вертикальный слева)
     if Settings.ESP.HealthBarEnabled and hum then
         local hpRatio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
         local barW = Settings.ESP.HealthBarWidth
-        local barH = Settings.ESP.HealthBarHeight
-        local bx = x + width/2 - barW/2
-        local by = y - 26
+        local barH = height  -- на всю высоту бокса
+        local offset = Settings.ESP.HealthBarOffset
+        local bx = x - barW - offset
+        local by = y
+        -- фон
         d.hpBg.Size = Vector2.new(barW, barH)
         d.hpBg.Position = Vector2.new(bx, by)
-        d.hpBg.Color = Color3.fromRGB(40, 30, 55)
+        d.hpBg.Color = Color3.fromRGB(30, 20, 40)
         d.hpBg.Filled = true; d.hpBg.Visible = true
-        d.hpBg.Transparency = alpha
-        d.hpFill.Size = Vector2.new(barW * hpRatio, barH)
-        d.hpFill.Position = Vector2.new(bx, by)
-        local r = 1 - hpRatio
-        d.hpFill.Color = Color3.fromRGB(
-            math.floor(80 + r * 175), math.floor(230 - r * 170), math.floor(120 - r * 40))
+        d.hpBg.Transparency = math.min(1, alpha + 0.2)
+        -- заполнение (снизу вверх)
+        local fillH = barH * hpRatio
+        d.hpFill.Size = Vector2.new(barW, fillH)
+        d.hpFill.Position = Vector2.new(bx, by + (barH - fillH))
+        -- плавный градиент: HP 1.0 = зелёный, 0.5 = жёлтый, 0.2 = оранжевый, 0 = красный
+        local r, g, b
+        if hpRatio > 0.5 then
+            -- зелёный → жёлтый
+            local t = (hpRatio - 0.5) / 0.5  -- 1..0
+            r = 1 - t
+            g = 1
+            b = 0.1
+        elseif hpRatio > 0.2 then
+            -- жёлтый → оранжевый
+            local t = (hpRatio - 0.2) / 0.3  -- 1..0
+            r = 1
+            g = 0.4 + t * 0.6
+            b = 0.1
+        else
+            -- оранжевый → красный
+            local t = hpRatio / 0.2  -- 1..0
+            r = 1
+            g = 0.4 * t
+            b = 0.1
+        end
+        d.hpFill.Color = Color3.new(r, g, b)
         d.hpFill.Filled = true; d.hpFill.Visible = true
         d.hpFill.Transparency = alpha
     else
         d.hpBg.Visible = false; d.hpFill.Visible = false
     end
 
+    -- NAMETAG
     if Settings.ESP.NametagsEnabled and hum then
         local parts = {}
         if Settings.ESP.NametagsShowHP then
@@ -803,6 +967,7 @@ local function drawESPForModel(model, plr)
         d.nametag.Visible = true
     else d.nametag.Visible = false end
 
+    -- ARROWS
     if Settings.ESP.ArrowsEnabled then
         local headPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
         if headPart then drawArrow(d, headPart.Position, fArrowColor, Settings.ESP.ArrowsSize) end
@@ -815,23 +980,10 @@ local function drawESP()
     if now - lastESPUpdate < ESP_INTERVAL then return end
     lastESPUpdate = now
     local seen = {}
-    if Settings.Mode == 1 then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                local ch, hrp = getCharacterForPlayer(plr)
-                if ch and hrp then seen[ch] = true; drawESPForModel(ch, plr) end
-            end
-        end
-    else
-        local folder = getCharactersFolder()
-        if not folder then return end
-        for _, model in ipairs(folder:GetChildren()) do
-            if model:IsA("Model") then
-                local plr = modelToPlayer(model)
-                if plr == LocalPlayer then continue end
-                seen[model] = true
-                drawESPForModel(model, plr)
-            end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local ch, hrp = getCharacterForPlayer(plr)
+            if ch and hrp then seen[ch] = true; drawESPForModel(ch, plr) end
         end
     end
     for m, d in pairs(ESPData) do
@@ -842,7 +994,7 @@ local function drawESP()
 end
 
 --=====================================================================
--- CROSSHAIR
+-- CROSSHAIR (Rainbow + Sun)
 --=====================================================================
 local CrosshairParts = nil
 local function initCrosshair()
@@ -857,13 +1009,31 @@ local function initCrosshair()
         o2 = newDrawing("Line"),
         o3 = newDrawing("Line"),
         o4 = newDrawing("Line"),
+        sunLines = {},
     }
+    for i = 1, 8 do
+        CrosshairParts.sunLines[i] = newDrawing("Line")
+    end
 end
 initCrosshair()
 
 local function hideCrosshair()
     if not CrosshairParts then return end
-    for _, obj in pairs(CrosshairParts) do obj.Visible = false end
+    for _, obj in pairs(CrosshairParts) do
+        if type(obj) == "table" then
+            for _, o in pairs(obj) do pcall(function() o.Visible = false end) end
+        else
+            pcall(function() obj.Visible = false end)
+        end
+    end
+end
+
+local function getCrosshairColor()
+    if not Settings.Crosshair.Rainbow then
+        return Settings.Crosshair.Color
+    end
+    local h = (tick() * 0.3) % 1
+    return Color3.fromHSV(h, 1, 1)
 end
 
 local function drawCrosshair()
@@ -871,23 +1041,70 @@ local function drawCrosshair()
     local c = Settings.Crosshair
     local center = getFOVOrigin()
     local gap, len, thick = c.Gap, c.Length, c.Thickness
+    local color = getCrosshairColor()
 
-    local function setLine(ln, from, to, color, thickness)
+    local function setLine(ln, from, to, col, thickness)
         ln.From = from; ln.To = to
-        ln.Color = color; ln.Thickness = thickness
+        ln.Color = col; ln.Thickness = thickness
         ln.Transparency = 0
         ln.Visible = true
     end
 
+    -- Скрыть все сначала (потом показать нужные)
+    for _, obj in pairs(CrosshairParts) do
+        if type(obj) == "table" then
+            for _, o in pairs(obj) do o.Visible = false end
+        else
+            obj.Visible = false
+        end
+    end
+
+    if c.Style == "Sun" then
+        -- 8 лучей + точка + маленький круг
+        local rayLen = len * 1.5
+        local startR = gap + 2
+        local endR = startR + rayLen
+        for i = 1, 8 do
+            local angle = (i - 1) * (math.pi / 4)
+            local dx = math.cos(angle)
+            local dy = math.sin(angle)
+            local ln = CrosshairParts.sunLines[i]
+            ln.From = Vector2.new(center.X + dx * startR, center.Y + dy * startR)
+            ln.To   = Vector2.new(center.X + dx * endR, center.Y + dy * endR)
+            ln.Color = color
+            ln.Thickness = thick
+            ln.Transparency = 0
+            ln.Visible = true
+        end
+        -- маленький круг в центре
+        CrosshairParts.circle.Position = center
+        CrosshairParts.circle.Radius = c.DotSize * 1.5
+        CrosshairParts.circle.Thickness = thick
+        CrosshairParts.circle.NumSides = 32
+        CrosshairParts.circle.Color = color
+        CrosshairParts.circle.Filled = false
+        CrosshairParts.circle.Transparency = 0
+        CrosshairParts.circle.Visible = true
+        -- точка в центре
+        if c.Dot then
+            CrosshairParts.dot.Size = Vector2.new(c.DotSize, c.DotSize)
+            CrosshairParts.dot.Position = Vector2.new(center.X - c.DotSize/2, center.Y - c.DotSize/2)
+            CrosshairParts.dot.Color = color
+            CrosshairParts.dot.Filled = true
+            CrosshairParts.dot.Visible = true
+        end
+        return
+    end
+
     if c.Style == "Cross" then
         setLine(CrosshairParts.line1, Vector2.new(center.X, center.Y - gap - len),
-            Vector2.new(center.X, center.Y - gap), c.Color, thick)
+            Vector2.new(center.X, center.Y - gap), color, thick)
         setLine(CrosshairParts.line2, Vector2.new(center.X, center.Y + gap),
-            Vector2.new(center.X, center.Y + gap + len), c.Color, thick)
+            Vector2.new(center.X, center.Y + gap + len), color, thick)
         setLine(CrosshairParts.line3, Vector2.new(center.X - gap - len, center.Y),
-            Vector2.new(center.X - gap, center.Y), c.Color, thick)
+            Vector2.new(center.X - gap, center.Y), color, thick)
         setLine(CrosshairParts.line4, Vector2.new(center.X + gap, center.Y),
-            Vector2.new(center.X + gap + len, center.Y), c.Color, thick)
+            Vector2.new(center.X + gap + len, center.Y), color, thick)
         if c.Outline then
             local oc = c.OutlineColor
             setLine(CrosshairParts.o1, Vector2.new(center.X - 1, center.Y - gap - len),
@@ -898,85 +1115,52 @@ local function drawCrosshair()
                 Vector2.new(center.X - gap, center.Y - 1), oc, thick + 2)
             setLine(CrosshairParts.o4, Vector2.new(center.X + gap, center.Y - 1),
                 Vector2.new(center.X + gap + len, center.Y - 1), oc, thick + 2)
-        else
-            CrosshairParts.o1.Visible = false
-            CrosshairParts.o2.Visible = false
-            CrosshairParts.o3.Visible = false
-            CrosshairParts.o4.Visible = false
         end
-        CrosshairParts.circle.Visible = false
 
     elseif c.Style == "Crosshair" then
         local shortLen = len * 0.6
         setLine(CrosshairParts.line1, Vector2.new(center.X, center.Y - gap),
-            Vector2.new(center.X, center.Y - gap - shortLen), c.Color, thick)
+            Vector2.new(center.X, center.Y - gap - shortLen), color, thick)
         setLine(CrosshairParts.line2, Vector2.new(center.X, center.Y + gap),
-            Vector2.new(center.X, center.Y + gap + shortLen), c.Color, thick)
+            Vector2.new(center.X, center.Y + gap + shortLen), color, thick)
         setLine(CrosshairParts.line3, Vector2.new(center.X - gap, center.Y),
-            Vector2.new(center.X - gap - shortLen, center.Y), c.Color, thick)
+            Vector2.new(center.X - gap - shortLen, center.Y), color, thick)
         setLine(CrosshairParts.line4, Vector2.new(center.X + gap, center.Y),
-            Vector2.new(center.X + gap + shortLen, center.Y), c.Color, thick)
-        CrosshairParts.o1.Visible = false
-        CrosshairParts.o2.Visible = false
-        CrosshairParts.o3.Visible = false
-        CrosshairParts.o4.Visible = false
-        CrosshairParts.circle.Visible = false
+            Vector2.new(center.X + gap + shortLen, center.Y), color, thick)
 
     elseif c.Style == "Circle" then
-        CrosshairParts.line1.Visible = false
-        CrosshairParts.line2.Visible = false
-        CrosshairParts.line3.Visible = false
-        CrosshairParts.line4.Visible = false
-        CrosshairParts.o1.Visible = false
-        CrosshairParts.o2.Visible = false
-        CrosshairParts.o3.Visible = false
-        CrosshairParts.o4.Visible = false
         CrosshairParts.circle.Position = center
         CrosshairParts.circle.Radius = c.CircleRadius
         CrosshairParts.circle.Thickness = thick
         CrosshairParts.circle.NumSides = 64
-        CrosshairParts.circle.Color = c.Color
+        CrosshairParts.circle.Color = color
         CrosshairParts.circle.Filled = false
         CrosshairParts.circle.Transparency = 0
         CrosshairParts.circle.Visible = true
 
     elseif c.Style == "Dot" then
-        CrosshairParts.line1.Visible = false
-        CrosshairParts.line2.Visible = false
-        CrosshairParts.line3.Visible = false
-        CrosshairParts.line4.Visible = false
-        CrosshairParts.o1.Visible = false
-        CrosshairParts.o2.Visible = false
-        CrosshairParts.o3.Visible = false
-        CrosshairParts.o4.Visible = false
-        CrosshairParts.circle.Visible = false
+        -- ничего кроме точки
     end
 
     if c.Dot then
         local size = c.DotSize
         CrosshairParts.dot.Size = Vector2.new(size, size)
         CrosshairParts.dot.Position = Vector2.new(center.X - size/2, center.Y - size/2)
-        CrosshairParts.dot.Color = c.Color
+        CrosshairParts.dot.Color = color
         CrosshairParts.dot.Filled = true
         CrosshairParts.dot.Transparency = 0
         CrosshairParts.dot.Visible = true
-    else
-        CrosshairParts.dot.Visible = false
     end
 end
 
 --=====================================================================
--- TARGET LINE (от прицела к цели аима)
+-- TARGET LINE
 --=====================================================================
-local TargetLinePool = {}      -- пул линий для dashed режима
-local TargetLineSingle = newDrawing("Line")   -- для solid режима
-local TargetLineLastTarget = nil
+local TargetLinePool = {}
+local TargetLineSingle = newDrawing("Line")
 
--- Получить точку-цель для Target Line (кость выбранная в Aim)
 local function getTargetLineEndpoint(part)
     if not part then return nil end
-    -- Точка нацеливания = позиция кости (Head/Torso/Nearest)
-    -- Если включен AimAtHitPoint — используем hit point
     if Settings.Aim.AimAtHitPoint then
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
@@ -989,7 +1173,6 @@ local function getTargetLineEndpoint(part)
     return part.Position
 end
 
--- Инициализация пула dashed-линий
 local function ensureTargetLinePool(count)
     while #TargetLinePool < count do
         table.insert(TargetLinePool, newDrawing("Line"))
@@ -1006,29 +1189,23 @@ local function drawTargetLine()
         for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
         return
     end
-    -- Только при активном аиме (aim-key зажат)
     if Settings.Aim.TargetLineOnlyAiming and not isAimKeyDown() then
         TargetLineSingle.Visible = false
         for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
         return
     end
-
-    -- Есть ли текущая цель?
     local t = currentTarget
     if not t then
         TargetLineSingle.Visible = false
         for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
         return
     end
-
     local model, part = resolveAimTarget(t)
     if not part then
         TargetLineSingle.Visible = false
         for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
         return
     end
-
-    -- Точки: от центра экрана (прицела) до цели
     local center = getFOVOrigin()
     local worldPos = getTargetLineEndpoint(part) or part.Position
     local screen, on = worldToScreen(worldPos)
@@ -1037,7 +1214,6 @@ local function drawTargetLine()
         for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
         return
     end
-
     local color = Settings.Aim.TargetLineColor
     local thickness = Settings.Aim.TargetLineThickness
     local transp = Settings.Aim.TargetLineTransparency
@@ -1050,7 +1226,6 @@ local function drawTargetLine()
         local total = (screen - center)
         for i = 1, count do
             local ln = TargetLinePool[i]
-            -- каждая линия = половина сегмента
             local a1 = (i - 1) / count
             local a2 = (i - 0.5) / count
             ln.From = center + total * a1
@@ -1061,7 +1236,6 @@ local function drawTargetLine()
             ln.Visible = true
         end
     else
-        -- Solid
         for _, ln in ipairs(TargetLinePool) do ln.Visible = false end
         TargetLineSingle.From = center
         TargetLineSingle.To = screen
@@ -1073,10 +1247,89 @@ local function drawTargetLine()
 end
 
 --=====================================================================
--- ITEM ESP / WORLD ESP
+-- AIM DEBUG VISUALS (всегда, без aim-key)
+--=====================================================================
+local DebugLine = newDrawing("Line")
+local DebugDot = newDrawing("Circle")
+DebugDot.NumSides = 24
+DebugDot.Filled = true
+DebugDot.Radius = 3
+
+local DebugReactionText = newDrawing("Text")
+DebugReactionText.Center = true
+DebugReactionText.Outline = true
+DebugReactionText.Size = 12
+
+local lastTargetTime = 0
+local lastReactionMs = 0
+
+local function drawAimDebug()
+    if not Settings.Aim.DebugVisuals or not Settings.Aim.Enabled then
+        DebugLine.Visible = false
+        DebugDot.Visible = false
+        DebugReactionText.Visible = false
+        return
+    end
+
+    -- Линия от камеры до цели (независимо от aim-key)
+    local t = currentTarget
+    if t then
+        local model, part = resolveAimTarget(t)
+        if part then
+            local camPos = Camera.CFrame.Position
+            local dest = part.Position
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = { LocalPlayer.Character, Camera }
+            local res = Workspace:Raycast(camPos, dest - camPos, params)
+            local hitPos = res and res.Position or dest
+
+            local fromScreen = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+            local toScreen, on = worldToScreen(hitPos)
+            if on then
+                DebugLine.From = fromScreen
+                DebugLine.To = toScreen
+                DebugLine.Color = Color3.fromRGB(255, 220, 100)
+                DebugLine.Thickness = 1
+                DebugLine.Transparency = 0.4
+                DebugLine.Visible = true
+
+                DebugDot.Position = toScreen
+                DebugDot.Color = Color3.fromRGB(255, 100, 100)
+                DebugDot.Transparency = 0.2
+                DebugDot.Visible = true
+
+                -- Reaction time
+                if lastTargetTime == 0 then
+                    lastTargetTime = tick()
+                end
+                lastReactionMs = math.floor((tick() - lastTargetTime) * 1000)
+                DebugReactionText.Text = string.format("%dms", lastReactionMs)
+                DebugReactionText.Position = Vector2.new(toScreen.X, toScreen.Y - 15)
+                DebugReactionText.Color = Color3.fromRGB(255, 255, 255)
+                DebugReactionText.Visible = true
+                return
+            end
+        end
+    else
+        lastTargetTime = 0
+    end
+
+    DebugLine.Visible = false
+    DebugDot.Visible = false
+    DebugReactionText.Visible = false
+end
+
+--=====================================================================
+-- ITEM ESP (с выбором предметов через dropdown)
 --=====================================================================
 local ItemDrawings = {}
-local WorldDrawings = {}
+local ItemCache = {
+    objects = {},
+    lastRefresh = 0,
+    uniqueNames = {},     -- [name] = true
+    listChanged = false,  -- флаг: список изменился
+}
 
 local function newItemDrawingStruct()
     return { square = newDrawing("Square"), text = newDrawing("Text") }
@@ -1107,53 +1360,153 @@ local function resolveFolderPath(pathStr)
     return nil
 end
 
-local function drawItemESPGeneric(drawings, folderPath, color, maxDist, textEnabled)
-    for inst, struct in pairs(drawings) do
-        if not inst.Parent then destroyItemStruct(struct); drawings[inst] = nil end
+local function findAnyBasePart(obj)
+    if not obj then return nil end
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Model") or obj:IsA("Folder") then
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("BasePart") then return child end
+        end
+        for _, child in ipairs(obj:GetChildren()) do
+            local bp = findAnyBasePart(child)
+            if bp then return bp end
+        end
     end
-    local folder = resolveFolderPath(folderPath)
-    if not folder then return end
-    local camPos = Camera.CFrame.Position
-    for _, obj in ipairs(folder:GetChildren()) do
-        local pos
-        if obj:IsA("BasePart") then pos = obj.Position
-        elseif obj:IsA("Model") then
-            local pp = obj:FindFirstChildWhichIsA("BasePart")
-            if pp then pos = pp.Position
-            else
-                local ok, piv = pcall(function() return obj:GetPivot().Position end)
-                if ok then pos = piv end
+    return nil
+end
+
+local function getObjectPosition(obj)
+    if obj:IsA("BasePart") then return obj.Position end
+    local bp = findAnyBasePart(obj)
+    if bp then return bp.Position end
+    local ok, piv = pcall(function() return obj:GetPivot().Position end)
+    if ok then return piv end
+    return nil
+end
+
+-- Callback-хук: обновление списка имён предметов
+local onItemListChanged = nil  -- устанавливается UI
+
+local function refreshItemCache()
+    local cache = ItemCache
+    cache.objects = {}
+    local namesSet = {}
+
+    for _, path in ipairs(ITEM_ESP_PATHS) do
+        local folder = resolveFolderPath(path)
+        if folder then
+            for _, obj in ipairs(folder:GetChildren()) do
+                table.insert(cache.objects, obj)
+                namesSet[obj.Name] = true
             end
         end
-        if pos then
-            local dist = (camPos - pos).Magnitude
-            if dist > maxDist then
-                local st = drawings[obj]
-                if st then st.square.Visible = false; st.text.Visible = false end
-            else
-                local screen, on = worldToScreen(pos)
-                if on then
-                    local st = drawings[obj]
-                    if not st then st = newItemDrawingStruct(); drawings[obj] = st end
-                    st.square.Size = Vector2.new(8, 8)
-                    st.square.Position = Vector2.new(screen.X - 4, screen.Y - 4)
-                    st.square.Color = color
-                    st.square.Thickness = 1
-                    st.square.Filled = false
-                    st.square.Visible = true
-                    if textEnabled then
-                        st.text.Text = obj.Name
-                        st.text.Position = Vector2.new(screen.X, screen.Y + 8)
-                        st.text.Color = color
-                        st.text.Size = 11
-                        st.text.Center = true
-                        st.text.Outline = true
-                        st.text.Visible = true
-                    else st.text.Visible = false end
-                else
-                    local st = drawings[obj]
-                    if st then st.square.Visible = false; st.text.Visible = false end
+    end
+
+    -- Проверяем: появились ли новые имена?
+    local changed = false
+    for name in pairs(namesSet) do
+        if not cache.uniqueNames[name] then
+            changed = true
+            cache.uniqueNames[name] = true
+            -- авто-включить новый предмет
+            if Settings.ItemESP.SelectedItems[name] == nil then
+                Settings.ItemESP.SelectedItems[name] = true
+            end
+        end
+    end
+    for name in pairs(cache.uniqueNames) do
+        if not namesSet[name] then
+            cache.uniqueNames[name] = nil
+            Settings.ItemESP.SelectedItems[name] = nil
+            changed = true
+        end
+    end
+
+    cache.lastRefresh = tick()
+    cache.listChanged = changed
+    if changed and onItemListChanged then
+        onItemListChanged()
+    end
+end
+
+local function isItemSelected(obj)
+    return Settings.ItemESP.SelectedItems[obj.Name] == true
+end
+
+local function drawItemESP()
+    if not Settings.ItemESP.Enabled then
+        for inst, struct in pairs(ItemDrawings) do
+            if typeof(inst) == "Instance" then
+                struct.square.Visible = false
+                struct.text.Visible = false
+            end
+        end
+        return
+    end
+
+    -- периодический refresh кэша
+    if tick() - ItemCache.lastRefresh > Settings.ItemESP.RefreshRate then
+        refreshItemCache()
+    end
+
+    local drawings = ItemDrawings
+    for inst, struct in pairs(drawings) do
+        if type(inst) == "userdata" or (typeof(inst) == "Instance") then
+            if not inst.Parent then
+                destroyItemStruct(struct)
+                drawings[inst] = nil
+            end
+        end
+    end
+
+    local camPos = Camera.CFrame.Position
+    local color = Settings.ItemESP.Color
+    local maxDist = Settings.ItemESP.MaxDistance
+    local textEnabled = Settings.ItemESP.TextEnabled
+    local seen = {}
+
+    for _, obj in ipairs(ItemCache.objects) do
+        if obj.Parent and isItemSelected(obj) then
+            local pos = getObjectPosition(obj)
+            if pos then
+                local dist = (camPos - pos).Magnitude
+                if dist <= maxDist then
+                    local screen, on = worldToScreen(pos)
+                    if on then
+                        seen[obj] = true
+                        local st = drawings[obj]
+                        if not st then
+                            st = newItemDrawingStruct()
+                            drawings[obj] = st
+                        end
+                        st.square.Size = Vector2.new(8, 8)
+                        st.square.Position = Vector2.new(screen.X - 4, screen.Y - 4)
+                        st.square.Color = color
+                        st.square.Thickness = 1
+                        st.square.Filled = false
+                        st.square.Visible = true
+                        if textEnabled then
+                            st.text.Text = obj.Name
+                            st.text.Position = Vector2.new(screen.X, screen.Y + 8)
+                            st.text.Color = color
+                            st.text.Size = 11
+                            st.text.Center = true
+                            st.text.Outline = true
+                            st.text.Visible = true
+                        else
+                            st.text.Visible = false
+                        end
+                    end
                 end
+            end
+        end
+    end
+
+    for inst, struct in pairs(drawings) do
+        if typeof(inst) == "Instance" then
+            if not seen[inst] then
+                struct.square.Visible = false
+                struct.text.Visible = false
             end
         end
     end
@@ -1234,6 +1587,19 @@ local function resolveAimTarget(plr)
     return model, part
 end
 
+-- Ground Only: проверяем что цель на земле
+local function isOnGround(model)
+    if not model then return true end
+    local hrp = model:FindFirstChild("HumanoidRootPart")
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return true end
+    -- Если FloorMaterial != Air, значит на земле
+    if hum.FloorMaterial ~= Enum.Material.Air then return true end
+    -- Проверим velocity по вертикали
+    if math.abs(hrp.AssemblyLinearVelocity.Y) < 2 then return true end
+    return false
+end
+
 local function getClosestTarget()
     local origin = getFOVOrigin()
     local myTeam = LocalPlayer.Team
@@ -1247,7 +1613,9 @@ local function getClosestTarget()
                 if on then
                     local d = (sp - origin).Magnitude
                     if d <= Settings.Aim.FOV * Settings.Aim.StickyMultiplier then
-                        return stickyTarget
+                        if (not Settings.Aim.GroundOnly) or isOnGround(model) then
+                            return stickyTarget
+                        end
                     end
                 end
             end
@@ -1265,12 +1633,14 @@ local function getClosestTarget()
                 if model and part then
                     local hum = model:FindFirstChildOfClass("Humanoid")
                     if hum and hum.Health > 0 then
-                        local sp, on = worldToScreen(part.CFrame.Position)
-                        if on then
-                            local d = (sp - origin).Magnitude
-                            if d <= Settings.Aim.FOV and d < bestScore then
-                                if (not Settings.Aim.WallCheck) or isVisibleFromCam(part, model) then
-                                    bestScore, best = d, plr
+                        if (not Settings.Aim.GroundOnly) or isOnGround(model) then
+                            local sp, on = worldToScreen(part.CFrame.Position)
+                            if on then
+                                local d = (sp - origin).Magnitude
+                                if d <= Settings.Aim.FOV and d < bestScore then
+                                    if (not Settings.Aim.WallCheck) or isVisibleFromCam(part, model) then
+                                        bestScore, best = d, plr
+                                    end
                                 end
                             end
                         end
@@ -1304,6 +1674,36 @@ local function aimAt(plr)
     end
 end
 
+local function heartbeatAimbot()
+    if not Settings.Aim.Enabled then
+        currentTarget = nil; stickyTarget = nil
+        return
+    end
+    local keyDown = isAimKeyDown()
+    local t = getClosestTarget()
+    if t and t ~= prevSticky and keyDown and Settings.Sound.TargetLockSound then
+        playSound(Settings.Sound.TargetLockSoundId)
+    end
+    prevSticky = t
+    currentTarget = t
+    if keyDown and t then
+        aimAt(t)
+    end
+end
+
+local mouseLocked = false
+local function setMouseLock(state)
+    if state == mouseLocked then return end
+    mouseLocked = state
+    pcall(function()
+        if state then
+            UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+        else
+            UIS.MouseBehavior = Enum.MouseBehavior.Default
+        end
+    end)
+end
+
 local function drawAimVisuals(plrTarget)
     if Settings.Aim.ShowFOV and Settings.Aim.Enabled then
         local origin = getFOVOrigin()
@@ -1333,56 +1733,6 @@ local function drawAimVisuals(plrTarget)
         end
     end
     aimArrow.Visible = false
-end
-
-local mouseLocked = false
-local function setMouseLock(state)
-    if state == mouseLocked then return end
-    mouseLocked = state
-    pcall(function()
-        if state then
-            UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
-        else
-            UIS.MouseBehavior = Enum.MouseBehavior.Default
-        end
-    end)
-end
-
-local function updateAimbot()
-    if not Settings.Aim.Enabled then
-        currentTarget = nil; stickyTarget = nil
-        drawAimVisuals(nil)
-        setMouseLock(false)
-        return
-    end
-    local keyDown = isAimKeyDown()
-    local t = getClosestTarget()
-    if t and t ~= prevSticky and keyDown and Settings.Sound.TargetLockSound then
-        playSound(Settings.Sound.TargetLockSoundId)
-    end
-    prevSticky = t
-    currentTarget = t
-    if keyDown and t then
-        setMouseLock(true)
-        aimAt(t)
-    else
-        setMouseLock(false)
-    end
-    drawAimVisuals(t)
-    if Settings.Mode == 1 then
-        for ch, _ in pairs(ESPData) do
-            local plr = nil
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p.Character == ch then plr = p; break end
-            end
-            updateChamsForModel(ch, plr == t)
-        end
-    else
-        for m, _ in pairs(ESPData) do
-            local plr = modelToPlayer(m)
-            updateChamsForModel(m, plr == t)
-        end
-    end
 end
 
 --=====================================================================
@@ -1532,75 +1882,108 @@ end
 
 local function applyWorld()
     local w = Settings.World
-    local anyEnabled = w.FullBright or w.NoFog or w.CustomTimeEnabled
-        or w.CustomAmbientEnabled or w.DisableSunRays or w.DisableAtmosphere
-    if anyEnabled then backupLighting() end
+    if w.FullBright or w.NoFog or w.CustomTimeEnabled or w.CustomAmbientEnabled then
+        backupLighting()
+    end
+end
+
+-- Постоянное применение (каждый кадр)
+local function keepWorldValues()
+    local w = Settings.World
 
     if w.FullBright then
-        pcall(function()
-            Lighting.Ambient = Color3.fromRGB(178, 178, 178)
-            Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
-            Lighting.Brightness = 2
-            Lighting.FogEnd = math.huge
-            Lighting.FogStart = 0
-            Lighting.ClockTime = 12
-            Lighting.GlobalShadows = false
-            Lighting.EnvironmentDiffuseScale = 1
-            Lighting.EnvironmentSpecularScale = 1
-        end)
-    elseif worldBackup then
-        pcall(function()
-            if not w.NoFog then
-                Lighting.FogEnd = originalLighting.FogEnd
-                Lighting.FogStart = originalLighting.FogStart
-            end
-            if not w.CustomAmbientEnabled then
-                Lighting.Ambient = originalLighting.Ambient
-                Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
-            end
-            if not w.CustomTimeEnabled then
-                Lighting.ClockTime = originalLighting.ClockTime
-            end
-            if not w.FullBright then
-                Lighting.Brightness = originalLighting.Brightness
-                Lighting.GlobalShadows = originalLighting.GlobalShadows
-                Lighting.EnvironmentDiffuseScale = originalLighting.EnvironmentDiffuseScale
-                Lighting.EnvironmentSpecularScale = originalLighting.EnvironmentSpecularScale
-            end
-        end)
+        if Lighting.Brightness ~= 2 then
+            pcall(function() Lighting.Brightness = 2 end)
+        end
+        if Lighting.Ambient ~= Color3.fromRGB(178, 178, 178) then
+            pcall(function()
+                Lighting.Ambient = Color3.fromRGB(178, 178, 178)
+                Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
+            end)
+        end
+        if Lighting.GlobalShadows then
+            pcall(function() Lighting.GlobalShadows = false end)
+        end
+        if Lighting.FogEnd ~= math.huge then
+            pcall(function()
+                Lighting.FogEnd = math.huge
+                Lighting.FogStart = 0
+            end)
+        end
     end
 
     if w.NoFog then
-        pcall(function() Lighting.FogEnd = math.huge end)
-    end
-    if w.CustomTimeEnabled then
-        pcall(function() Lighting.ClockTime = w.CustomTime end)
-    end
-    if w.CustomAmbientEnabled then
-        pcall(function()
-            Lighting.Ambient = w.AmbientColor
-            Lighting.OutdoorAmbient = w.AmbientColor
-        end)
+        if Lighting.FogEnd ~= math.huge then
+            pcall(function() Lighting.FogEnd = math.huge end)
+        end
     end
 
-    for _, obj in ipairs(Lighting:GetChildren()) do
-        if obj:IsA("SunRaysEffect") then
-            obj.Enabled = not w.DisableSunRays
-        elseif obj:IsA("Atmosphere") then
-            obj.Enabled = not w.DisableAtmosphere
+    if w.CustomTimeEnabled then
+        if math.abs(Lighting.ClockTime - w.CustomTime) > 0.05 then
+            pcall(function() Lighting.ClockTime = w.CustomTime end)
+        end
+    end
+
+    if w.CustomAmbientEnabled then
+        if Lighting.Ambient ~= w.AmbientColor then
+            pcall(function()
+                Lighting.Ambient = w.AmbientColor
+                Lighting.OutdoorAmbient = w.AmbientColor
+            end)
         end
     end
 end
 
-local originalFOV = nil
-local function applyCameraFOV()
+-- Remove Grass
+local grassConnection = nil
+local function setRemoveGrass(state)
+    if grassConnection then grassConnection:Disconnect(); grassConnection = nil end
+    if not state then
+        -- восстановить траву
+        for _, obj in ipairs(Workspace.Terrain:GetChildren()) do
+            if obj:IsA("BasePart") and obj.Name == "_MixWareGrass" then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+        return
+    end
+    -- Удаляем Decoration через Terrain
+    grassConnection = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            -- Terrain Decoration — не удалить напрямую. Убираем через Data.
+            -- Прячем большие куски grass-моделей
+            local terrain = Workspace.Terrain
+            -- Отключаем decoration через Workspace.FallenPartsDestroyHeight
+            -- Просто снижаем детализацию травы через SetMaterialColor
+        end)
+    end)
+    -- Реальный способ: убрать Decoration Controllers в Workspace
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj.Name == "Grass" or obj.Name == "grass" then
+            obj.Transparency = 1
+        end
+    end
+end
+
+-- Простая имплементация Remove Grass — убираем Decoration и Terrain Decoration через Client
+local function applyRemoveGrass()
+    if Settings.World.RemoveGrass then
+        pcall(function()
+            Workspace.Terrain.Decoration = false
+        end)
+        -- Убираем партиклы травы если есть
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") and string.find(string.lower(obj.Parent.Name), "grass") then
+                obj.Enabled = false
+            end
+        end
+    end
+end
+
+local function keepCameraFOV()
     if Settings.World.CameraFOVEnabled then
-        if originalFOV == nil then originalFOV = Camera.FieldOfView end
-        Camera.FieldOfView = Settings.World.CameraFOV
-    else
-        if originalFOV ~= nil then
-            Camera.FieldOfView = originalFOV
-            originalFOV = nil
+        if math.abs(Camera.FieldOfView - Settings.World.CameraFOV) > 0.01 then
+            pcall(function() Camera.FieldOfView = Settings.World.CameraFOV end)
         end
     end
 end
@@ -1608,18 +1991,20 @@ end
 --=====================================================================
 -- MISC
 --=====================================================================
-local infJumpConn
+local infJumpConn = nil
 local function setInfJump(state)
-    if infJumpConn then infJumpConn:Disconnect(); infJumpConn = nil end
-    if state then
-        infJumpConn = UIS.JumpRequest:Connect(function()
-            local ch = LocalPlayer.Character
-            if ch then
-                local hum = ch:FindFirstChildOfClass("Humanoid")
-                if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-            end
-        end)
+    if infJumpConn then
+        pcall(function() infJumpConn:Disconnect() end)
+        infJumpConn = nil
     end
+    if not state then return end
+    infJumpConn = UIS.JumpRequest:Connect(function()
+        local ch = LocalPlayer.Character
+        if ch then
+            local hum = ch:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
 end
 
 local tpwalkConn
@@ -1717,13 +2102,15 @@ task.spawn(function()
         local time = os.date("%H:%M:%S")
         local playerCount = #Players:GetPlayers()
         WmText.Text = string.format(
-            "  MixWare.lol v2.2   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+            "  MixWare.lol v2.6   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
             ActiveConfigName, time, fps, ping, playerCount)
         task.wait(0.5)
     end
 end)
 
+--=====================================================================
 -- INVENTORY PANEL
+--=====================================================================
 local InvPanel = Instance.new("Frame")
 InvPanel.Size = UDim2.new(0, 280, 0, 260)
 InvPanel.Position = UDim2.new(0.72, 0, 0.25, 0)
@@ -1797,15 +2184,18 @@ end
 
 local function gatherAllToolsForPlayer(plr)
     local seen, tools = {}, {}
-    local function addTool(t)
-        if t and t:IsA("Tool") and not seen[t] then
-            seen[t] = true; table.insert(tools, t)
+    local function addItem(t)
+        if t and not seen[t] then
+            if t:IsA("Tool") or t:IsA("Model") or t:IsA("Accessory") then
+                seen[t] = true
+                table.insert(tools, t)
+            end
         end
     end
     local ch = plr.Character
     if ch then
-        for _, d in ipairs(ch:GetDescendants()) do
-            if d:IsA("Tool") then addTool(d) end
+        for _, d in ipairs(ch:GetChildren()) do
+            addItem(d)
         end
     end
     local bp = plr:FindFirstChild("Backpack")
@@ -1814,15 +2204,15 @@ local function gatherAllToolsForPlayer(plr)
         if ok then bp = cls end
     end
     if bp then
-        for _, d in ipairs(bp:GetDescendants()) do
-            if d:IsA("Tool") then addTool(d) end
+        for _, d in ipairs(bp:GetChildren()) do
+            addItem(d)
         end
     end
-    if Settings.Mode == 2 then
-        local model = getCustomModelForPlayer(plr)
-        if model then
-            for _, d in ipairs(model:GetDescendants()) do
-                if d:IsA("Tool") then addTool(d) end
+    if #tools == 0 then
+        local pg = plr:FindFirstChild("PlayerGui")
+        if pg then
+            for _, d in ipairs(pg:GetDescendants()) do
+                if d:IsA("Tool") then addItem(d) end
             end
         end
     end
@@ -1982,7 +2372,7 @@ TitleGrad.Color = ColorSequence.new({
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -80, 1, 0); Title.Position = UDim2.new(0, 14, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "MixWare.lol  •  v2.2"
+Title.Text = "MixWare.lol  •  v2.6"
 Title.TextColor3 = Theme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -2112,7 +2502,6 @@ local ConfigPage = makeSubButton("Config")
 local MenuPage   = makeSubButton("Menu")
 selectTab("AimBot")
 
--- Helpers
 local function makeRow(parent, height)
     local f = Instance.new("Frame")
     f.Size = UDim2.new(1, -8, 0, height or 28)
@@ -2182,17 +2571,34 @@ local function makeSlider(parent, text, min, max, path, callback)
     barFill.BorderSizePixel = 0
     barFill.Parent = barBg
     Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+    local range = max - min
+    local step
+    if range <= 1 then step = 0.01
+    elseif range <= 3 then step = 0.05
+    elseif range <= 10 then step = 0.1
+    elseif range <= 50 then step = 0.5
+    elseif range <= 200 then step = 1
+    elseif range <= 1000 then step = 5
+    else step = 10 end
+    local function roundStep(v) return math.floor((v / step) + 0.5) * step end
+    local function fmtNum(v)
+        if step < 1 then
+            local decimals = math.max(0, math.ceil(-math.log10(step)))
+            return string.format("%." .. decimals .. "f", v)
+        end
+        return tostring(v)
+    end
     local dragging = false
     local function applyVisual(v)
         local rel = math.clamp((v - min)/(max-min), 0, 1)
         barFill.Size = UDim2.new(rel, 0, 1, 0)
-        lbl.Text = text .. ": " .. tostring(v)
+        lbl.Text = text .. ": " .. fmtNum(v)
     end
     local function setFromX(x)
         local rel = math.clamp((x - barBg.AbsolutePosition.X) / barBg.AbsoluteSize.X, 0, 1)
         local v = min + (max - min) * rel
-        if max - min > 1 then v = math.floor(v + 0.5)
-        else v = math.floor(v*100+0.5)/100 end
+        v = roundStep(v)
+        v = math.clamp(v, min, max)
         setPath(path, v)
         applyVisual(v)
         if callback then callback(v) end
@@ -2349,34 +2755,6 @@ local function makeDropdown(parent, text, options, path, callback)
     return row
 end
 
-local function makeTextBox(parent, text, path, callback, placeholder)
-    local row = makeRow(parent, 32)
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 130, 1, 0); lbl.Position = UDim2.new(0, 10, 0, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = text; lbl.TextColor3 = Theme.Text
-    lbl.Font = Enum.Font.Gotham; lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 200, 0, 22); box.Position = UDim2.new(1, -210, 0.5, -11)
-    box.BackgroundColor3 = Theme.Panel
-    box.TextColor3 = Theme.Text
-    box.PlaceholderText = placeholder or ""
-    box.Text = tostring(getPath(path) or "")
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 12
-    box.BorderSizePixel = 0
-    box.Parent = row
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
-    box.FocusLost:Connect(function()
-        setPath(path, box.Text)
-        if callback then callback(box.Text) end
-    end)
-    registerUI(path, function(v) box.Text = tostring(v) end)
-    return row
-end
-
 --=====================================================================
 -- AIMBOT PAGE
 --=====================================================================
@@ -2393,8 +2771,9 @@ makeToggle(AimPage, "Aim At Hit Point", "Aim.AimAtHitPoint")
 makeToggle(AimPage, "Prediction", "Aim.Prediction")
 makeSlider(AimPage, "Prediction Factor", 0.5, 3, "Aim.PredictionFactor")
 makeSlider(AimPage, "Sticky Multiplier", 1, 4, "Aim.StickyMultiplier")
+makeToggle(AimPage, "Ground Only", "Aim.GroundOnly")
+makeToggle(AimPage, "Debug Visuals", "Aim.DebugVisuals")
 
--- NEW v2.2: Target Line
 makeToggle(AimPage, "Target Line", "Aim.TargetLine")
 makeColorPicker(AimPage, "Target Line Color", "Aim.TargetLineColor")
 makeSlider(AimPage, "Target Line Thickness", 1, 5, "Aim.TargetLineThickness")
@@ -2477,16 +2856,21 @@ makeToggle(EnemiesPage, "Tracers", "ESP.TracerEnabled")
 makeColorPicker(EnemiesPage, "Tracer Color", "ESP.TracerColor")
 makeDropdown(EnemiesPage, "Tracer Origin", {"Top", "Center", "Bottom"}, "ESP.TracerOrigin")
 makeToggle(EnemiesPage, "Show Name", "ESP.NameEnabled")
+makeToggle(EnemiesPage, "Name Shadow", "ESP.NameShadow")
 makeToggle(EnemiesPage, "Show Distance", "ESP.DistanceEnabled")
 makeSlider(EnemiesPage, "Max Distance", 50, 3000, "ESP.MaxDistance")
 makeToggle(EnemiesPage, "Visible Check", "ESP.VisibleCheck")
 makeColorPicker(EnemiesPage, "Visible Color", "ESP.VisibleColor")
+makeToggle(EnemiesPage, "Behind-Wall Pulse", "ESP.PulseEnabled")
+makeSlider(EnemiesPage, "Pulse Speed", 0.5, 3, "ESP.PulseSpeed")
+makeSlider(EnemiesPage, "Pulse Min Alpha", 0.1, 0.9, "ESP.PulseMin")
+makeSlider(EnemiesPage, "Pulse Max Alpha", 0.1, 1, "ESP.PulseMax")
 makeToggle(EnemiesPage, "Skeleton ESP", "ESP.SkeletonEnabled")
 makeColorPicker(EnemiesPage, "Skeleton Color", "ESP.SkeletonColor")
 makeSlider(EnemiesPage, "Skeleton Thickness", 1, 4, "ESP.SkeletonThickness")
 makeToggle(EnemiesPage, "Health Bar", "ESP.HealthBarEnabled")
-makeSlider(EnemiesPage, "Health Bar Width", 30, 100, "ESP.HealthBarWidth")
-makeSlider(EnemiesPage, "Health Bar Height", 2, 10, "ESP.HealthBarHeight")
+makeSlider(EnemiesPage, "Health Bar Width", 2, 12, "ESP.HealthBarWidth")
+makeSlider(EnemiesPage, "Health Bar Offset", 2, 20, "ESP.HealthBarOffset")
 makeToggle(EnemiesPage, "Custom Nametags", "ESP.NametagsEnabled")
 makeToggle(EnemiesPage, "Nametag HP", "ESP.NametagsShowHP")
 makeToggle(EnemiesPage, "Nametag Distance", "ESP.NametagsShowDist")
@@ -2503,8 +2887,9 @@ makeSlider(EnemiesPage, "Fade Start %", 0.1, 1, "ESP.DistanceFadeStart")
 -- CROSSHAIR PAGE
 --=====================================================================
 makeToggle(CrosshairPage, "Crosshair Enabled", "Crosshair.Enabled")
-makeDropdown(CrosshairPage, "Style", {"Cross", "Crosshair", "Circle", "Dot"}, "Crosshair.Style")
+makeDropdown(CrosshairPage, "Style", {"Cross", "Crosshair", "Circle", "Dot", "Sun"}, "Crosshair.Style")
 makeColorPicker(CrosshairPage, "Color", "Crosshair.Color")
+makeToggle(CrosshairPage, "Rainbow", "Crosshair.Rainbow")
 makeColorPicker(CrosshairPage, "Outline Color", "Crosshair.OutlineColor")
 makeToggle(CrosshairPage, "Outline", "Crosshair.Outline")
 makeSlider(CrosshairPage, "Gap", 0, 20, "Crosshair.Gap")
@@ -2515,13 +2900,150 @@ makeToggle(CrosshairPage, "Dot", "Crosshair.Dot")
 makeSlider(CrosshairPage, "Dot Size", 1, 8, "Crosshair.DotSize")
 
 --=====================================================================
--- ITEMS PAGE
+-- ITEMS PAGE (dropdown с чекбоксами)
 --=====================================================================
 makeToggle(ItemsPage, "Item ESP", "ItemESP.Enabled")
-makeTextBox(ItemsPage, "Folder Path", "ItemESP.FolderPath", nil, "Workspace.Items")
 makeColorPicker(ItemsPage, "Item Color", "ItemESP.Color")
 makeSlider(ItemsPage, "Max Distance", 50, 2000, "ItemESP.MaxDistance")
 makeToggle(ItemsPage, "Show Text", "ItemESP.TextEnabled")
+makeSlider(ItemsPage, "Refresh Rate", 0.05, 1, "ItemESP.RefreshRate")
+
+-- Dropdown с чекбоксами
+local itemSelectorRow = makeRow(ItemsPage, 32)
+local itemSelectorLbl = Instance.new("TextLabel")
+itemSelectorLbl.Size = UDim2.new(0, 130, 1, 0); itemSelectorLbl.Position = UDim2.new(0, 10, 0, 0)
+itemSelectorLbl.BackgroundTransparency = 1
+itemSelectorLbl.Text = "Selected Items:"
+itemSelectorLbl.TextColor3 = Theme.Text
+itemSelectorLbl.Font = Enum.Font.Gotham; itemSelectorLbl.TextSize = 13
+itemSelectorLbl.TextXAlignment = Enum.TextXAlignment.Left
+itemSelectorLbl.Parent = itemSelectorRow
+
+local itemSelectorBtn = Instance.new("TextButton")
+itemSelectorBtn.Size = UDim2.new(0, 120, 0, 22); itemSelectorBtn.Position = UDim2.new(1, -130, 0.5, -11)
+itemSelectorBtn.BackgroundColor3 = Theme.Accent
+itemSelectorBtn.Text = "0 selected"
+itemSelectorBtn.TextColor3 = Color3.fromRGB(255,255,255)
+itemSelectorBtn.Font = Enum.Font.Gotham; itemSelectorBtn.TextSize = 12
+itemSelectorBtn.BorderSizePixel = 0
+itemSelectorBtn.Parent = itemSelectorRow
+Instance.new("UICorner", itemSelectorBtn).CornerRadius = UDim.new(0, 5)
+
+-- Popup со списком
+local itemPopup = Instance.new("Frame")
+itemPopup.Size = UDim2.new(0, 300, 0, 240)
+itemPopup.Position = UDim2.new(0.5, -150, 0.5, -120)
+itemPopup.BackgroundColor3 = Theme.Bg
+itemPopup.BorderSizePixel = 0
+itemPopup.Visible = false
+itemPopup.ZIndex = 10
+itemPopup.Parent = ScreenGui
+Instance.new("UICorner", itemPopup).CornerRadius = UDim.new(0, 10)
+local popupStroke = Instance.new("UIStroke", itemPopup)
+popupStroke.Color = Theme.Accent; popupStroke.Thickness = 1
+
+local popupTitle = Instance.new("TextLabel")
+popupTitle.Size = UDim2.new(1, -60, 0, 26); popupTitle.Position = UDim2.new(0, 10, 0, 4)
+popupTitle.BackgroundTransparency = 1
+popupTitle.Text = "Select Items to Show:"
+popupTitle.TextColor3 = Theme.Text
+popupTitle.Font = Enum.Font.GothamBold; popupTitle.TextSize = 12
+popupTitle.TextXAlignment = Enum.TextXAlignment.Left
+popupTitle.Parent = itemPopup
+
+local popupClose = Instance.new("TextButton")
+popupClose.Size = UDim2.new(0, 24, 0, 24); popupClose.Position = UDim2.new(1, -30, 0, 4)
+popupClose.BackgroundColor3 = Theme.Bad
+popupClose.Text = "X"; popupClose.TextColor3 = Theme.Text
+popupClose.Font = Enum.Font.GothamBold; popupClose.TextSize = 12
+popupClose.BorderSizePixel = 0
+popupClose.Parent = itemPopup
+Instance.new("UICorner", popupClose).CornerRadius = UDim.new(0, 5)
+
+local popupScroll = Instance.new("ScrollingFrame")
+popupScroll.Size = UDim2.new(1, -20, 1, -70); popupScroll.Position = UDim2.new(0, 10, 0, 34)
+popupScroll.BackgroundTransparency = 1
+popupScroll.BorderSizePixel = 0
+popupScroll.ScrollBarThickness = 4
+popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+popupScroll.Parent = itemPopup
+local popupLayout = Instance.new("UIListLayout", popupScroll)
+popupLayout.Padding = UDim.new(0, 4)
+popupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local popupButtons = {}
+local function rebuildPopupList()
+    for _, btn in ipairs(popupButtons) do btn:Destroy() end
+    popupButtons = {}
+
+    local names = {}
+    for name in pairs(ItemCache.uniqueNames) do table.insert(names, name) end
+    table.sort(names)
+
+    for _, name in ipairs(names) do
+        local cbRow = Instance.new("Frame")
+        cbRow.Size = UDim2.new(1, -4, 0, 22)
+        cbRow.BackgroundColor3 = Theme.Row
+        cbRow.BackgroundTransparency = 0.2
+        cbRow.BorderSizePixel = 0
+        cbRow.Parent = popupScroll
+        Instance.new("UICorner", cbRow).CornerRadius = UDim.new(0, 5)
+
+        local cb = Instance.new("TextButton")
+        cb.Size = UDim2.new(0, 18, 0, 18); cb.Position = UDim2.new(0, 4, 0.5, -9)
+        local isSelected = Settings.ItemESP.SelectedItems[name] == true
+        cb.BackgroundColor3 = isSelected and Theme.Good or Theme.Panel
+        cb.Text = isSelected and "✓" or ""
+        cb.TextColor3 = Color3.fromRGB(255,255,255)
+        cb.Font = Enum.Font.GothamBold; cb.TextSize = 13
+        cb.BorderSizePixel = 0
+        cb.Parent = cbRow
+        Instance.new("UICorner", cb).CornerRadius = UDim.new(0, 4)
+
+        local nl = Instance.new("TextLabel")
+        nl.Size = UDim2.new(1, -30, 1, 0); nl.Position = UDim2.new(0, 26, 0, 0)
+        nl.BackgroundTransparency = 1
+        nl.Text = name
+        nl.TextColor3 = Theme.Text
+        nl.Font = Enum.Font.Gotham; nl.TextSize = 12
+        nl.TextXAlignment = Enum.TextXAlignment.Left
+        nl.Parent = cbRow
+
+        cb.MouseButton1Click:Connect(function()
+            local sel = Settings.ItemESP.SelectedItems[name] == true
+            Settings.ItemESP.SelectedItems[name] = not sel
+            cb.BackgroundColor3 = (not sel) and Theme.Good or Theme.Panel
+            cb.Text = (not sel) and "✓" or ""
+            -- счётчик
+            local count = 0
+            for _, v in pairs(Settings.ItemESP.SelectedItems) do
+                if v then count = count + 1 end
+            end
+            itemSelectorBtn.Text = count .. " selected"
+        end)
+
+        table.insert(popupButtons, cbRow)
+    end
+
+    -- обновить счётчик
+    local count = 0
+    for _, v in pairs(Settings.ItemESP.SelectedItems) do
+        if v then count = count + 1 end
+    end
+    itemSelectorBtn.Text = count .. " selected"
+end
+
+itemSelectorBtn.MouseButton1Click:Connect(function()
+    itemPopup.Visible = not itemPopup.Visible
+    if itemPopup.Visible then rebuildPopupList() end
+end)
+popupClose.MouseButton1Click:Connect(function() itemPopup.Visible = false end)
+
+-- Хук: обновление списка при появлении новых имён
+onItemListChanged = function()
+    if itemPopup.Visible then rebuildPopupList() end
+end
 
 --=====================================================================
 -- INVENTORY PAGE
@@ -2547,20 +3069,22 @@ end)
 -- WORLD PAGE
 --=====================================================================
 makeToggle(WorldPage, "World ESP", "WorldESP.Enabled")
-makeTextBox(WorldPage, "Folder Path", "WorldESP.FolderPath", nil, "Workspace.WorldItems")
 makeColorPicker(WorldPage, "World Color", "WorldESP.Color")
 makeSlider(WorldPage, "Max Distance", 50, 2000, "WorldESP.MaxDistance")
 makeToggle(WorldPage, "Show Text", "WorldESP.TextEnabled")
-makeToggle(WorldPage, "FullBright", "World.FullBright", function() applyWorld() end)
-makeToggle(WorldPage, "No Fog", "World.NoFog", function() applyWorld() end)
-makeToggle(WorldPage, "Custom Time of Day", "World.CustomTimeEnabled", function() applyWorld() end)
-makeSlider(WorldPage, "Time", 0, 24, "World.CustomTime", function() applyWorld() end)
-makeToggle(WorldPage, "Custom Ambient", "World.CustomAmbientEnabled", function() applyWorld() end)
-makeColorPicker(WorldPage, "Ambient Color", "World.AmbientColor", function() applyWorld() end)
-makeToggle(WorldPage, "Disable Sun Rays", "World.DisableSunRays", function() applyWorld() end)
-makeToggle(WorldPage, "Disable Atmosphere", "World.DisableAtmosphere", function() applyWorld() end)
-makeToggle(WorldPage, "Custom Camera FOV", "World.CameraFOVEnabled", function() applyCameraFOV() end)
-makeSlider(WorldPage, "Camera FOV", 30, 120, "World.CameraFOV", function() applyCameraFOV() end)
+makeToggle(WorldPage, "FullBright", "World.FullBright")
+makeToggle(WorldPage, "No Fog", "World.NoFog")
+makeToggle(WorldPage, "Custom Time of Day", "World.CustomTimeEnabled")
+makeSlider(WorldPage, "Time", 0, 24, "World.CustomTime")
+makeToggle(WorldPage, "Custom Ambient", "World.CustomAmbientEnabled")
+makeColorPicker(WorldPage, "Ambient Color", "World.AmbientColor")
+makeToggle(WorldPage, "Disable Sun Rays", "World.DisableSunRays")
+makeToggle(WorldPage, "Disable Atmosphere", "World.DisableAtmosphere")
+makeToggle(WorldPage, "Remove Grass", "World.RemoveGrass", function(v)
+    applyRemoveGrass()
+end)
+makeToggle(WorldPage, "Custom Camera FOV", "World.CameraFOVEnabled")
+makeSlider(WorldPage, "Camera FOV", 30, 120, "World.CameraFOV")
 
 --=====================================================================
 -- MISC PAGE
@@ -2584,12 +3108,6 @@ end)
 --=====================================================================
 -- CONFIG PAGE
 --=====================================================================
-makeDropdown(ConfigPage, "Mode", {1, 2}, "Mode", function(v)
-    for m, d in pairs(ESPData) do destroyESPStruct(d) end
-    ESPData = {}
-end)
-makeTextBox(ConfigPage, "Folder", "Target.CharactersFolder", nil, "Characters")
-
 local CONFIG_FOLDER = "MixWare_Configs"
 local LAST_FILE = CONFIG_FOLDER .. "/_last.txt"
 local hasFileAPI = (writefile and readfile and isfolder and makefolder and listfiles and delfile) and true or false
@@ -2641,7 +3159,7 @@ end
 
 local function saveConfig(name)
     if not name or name == "" then return false end
-    local data = HttpService:JSONEncode(Settings)
+    local data = HttpService:JSONEncode(serializeSettings(Settings))
     if hasFileAPI then
         ensureFolder()
         return pcall(function()
@@ -2668,30 +3186,12 @@ local function loadConfig(name, silent)
     if not data then return false end
     local ok, decoded = pcall(function() return HttpService:JSONDecode(data) end)
     if not ok or type(decoded) ~= "table" then return false end
-    local function restoreColors(dst, src)
-        for k, v in pairs(src) do
-            if type(v) == "table" then
-                if v.R and v.G and v.B then
-                    local ok2, c = pcall(function() return Color3.new(v.R, v.G, v.B) end)
-                    if ok2 and c then dst[k] = c end
-                elseif type(dst[k]) == "table" then
-                    restoreColors(dst[k], v)
-                else
-                    dst[k] = v
-                end
-            else
-                dst[k] = v
-            end
-        end
-    end
-    restoreColors(Settings, decoded)
+    deserializeSettings(Settings, decoded)
     ActiveConfigName = name
     syncAllUI()
-    if Settings.Misc.AntiFling then setAntiFling(true) end
-    if Settings.Misc.TPWalkEnabled then setTPWalk(true) end
-    if Settings.Misc.InfJump then setInfJump(true) end
-    if Settings.World.CameraFOVEnabled then applyCameraFOV() end
-    applyWorld()
+    if Settings.Misc.AntiFling then setAntiFling(true) else setAntiFling(false) end
+    if Settings.Misc.TPWalkEnabled then setTPWalk(true) else setTPWalk(false) end
+    if Settings.Misc.InfJump then setInfJump(true) else setInfJump(false) end
     if Settings.Aim.HeadMover then startHeadMover() else stopHeadMover() end
     if not silent then notify("Loaded config: " .. name, Theme.Good) end
     return true
@@ -2812,11 +3312,111 @@ end)
 rebuildConfigList()
 
 --=====================================================================
--- MENU PAGE
+-- MENU PAGE (темы + масштаб)
 --=====================================================================
 makeToggle(MenuPage, "Watermark", "UI.Watermark", function(v) Watermark.Visible = v end)
 makeToggle(MenuPage, "Notifications", "UI.Notifications")
 
+-- Тема
+local themeRow = makeRow(MenuPage, 32)
+local themeLbl = Instance.new("TextLabel")
+themeLbl.Size = UDim2.new(0, 120, 1, 0); themeLbl.Position = UDim2.new(0, 10, 0, 0)
+themeLbl.BackgroundTransparency = 1
+themeLbl.Text = "Theme:"
+themeLbl.TextColor3 = Theme.Text
+themeLbl.Font = Enum.Font.Gotham; themeLbl.TextSize = 13
+themeLbl.TextXAlignment = Enum.TextXAlignment.Left
+themeLbl.Parent = themeRow
+local themeBtn = Instance.new("TextButton")
+themeBtn.Size = UDim2.new(0, 120, 0, 22); themeBtn.Position = UDim2.new(1, -130, 0.5, -11)
+themeBtn.BackgroundColor3 = Theme.Accent
+themeBtn.Text = Settings.UI.Theme
+themeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+themeBtn.Font = Enum.Font.Gotham; themeBtn.TextSize = 12
+themeBtn.BorderSizePixel = 0
+themeBtn.Parent = themeRow
+Instance.new("UICorner", themeBtn).CornerRadius = UDim.new(0, 5)
+
+-- Масштаб
+local scaleRow = makeRow(MenuPage, 32)
+local scaleLbl = Instance.new("TextLabel")
+scaleLbl.Size = UDim2.new(0, 120, 1, 0); scaleLbl.Position = UDim2.new(0, 10, 0, 0)
+scaleLbl.BackgroundTransparency = 1
+scaleLbl.Text = "UI Scale:"
+scaleLbl.TextColor3 = Theme.Text
+scaleLbl.Font = Enum.Font.Gotham; scaleLbl.TextSize = 13
+scaleLbl.TextXAlignment = Enum.TextXAlignment.Left
+scaleLbl.Parent = scaleRow
+local scaleBtn = Instance.new("TextButton")
+scaleBtn.Size = UDim2.new(0, 120, 0, 22); scaleBtn.Position = UDim2.new(1, -130, 0.5, -11)
+scaleBtn.BackgroundColor3 = Theme.Accent
+scaleBtn.Text = Settings.UI.Scale
+scaleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+scaleBtn.Font = Enum.Font.Gotham; scaleBtn.TextSize = 12
+scaleBtn.BorderSizePixel = 0
+scaleBtn.Parent = scaleRow
+Instance.new("UICorner", scaleBtn).CornerRadius = UDim.new(0, 5)
+
+local themeOrder = {"Purple", "Dark", "Blue", "Red", "Pink"}
+local scaleOrder = {"Small", "Medium", "Large"}
+local scaleValues = {Small = 0.85, Medium = 1.0, Large = 1.15}
+
+local function applyTheme(name)
+    local t = Themes[name]
+    if not t then return end
+    Theme = t
+    Settings.UI.Theme = name
+    themeBtn.Text = name
+
+    -- Применить к UI
+    Main.BackgroundColor3 = Theme.Bg
+    MainGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Theme.Bg),
+        ColorSequenceKeypoint.new(1, Theme.Bg2),
+    })
+    Stroke.Color = Theme.Stroke
+    TitleBar.BackgroundColor3 = Theme.Title
+    TitleLine.BackgroundColor3 = Theme.Accent
+    Title.TextColor3 = Theme.Text
+    SearchBar.BackgroundColor3 = Theme.Panel
+    SearchBar.TextColor3 = Theme.Text
+    -- tab buttons, rows — обновляем через syncAllUI нельзя, они свои цвета имеют.
+    -- Просто перекрасим боковые кнопки и заголовки категорий
+    for _, btn in pairs(tabButtons) do
+        btn.BackgroundColor3 = Theme.Panel
+        btn.TextColor3 = Theme.TextDim
+    end
+    for _, obj in ipairs(Sidebar:GetChildren()) do
+        if obj:IsA("TextLabel") then obj.TextColor3 = Theme.Accent2 end
+    end
+    -- активировать текущий таб
+    local activeName
+    for k, p in pairs(tabPages) do
+        if p.Visible then activeName = k break end
+    end
+    if activeName then selectTab(activeName) end
+end
+
+local function applyScale(name)
+    local s = scaleValues[name] or 1.0
+    Settings.UI.Scale = name
+    scaleBtn.Text = name
+    Main.Size = UDim2.new(0, 700 * s, 0, 440 * s)
+    Main.Position = UDim2.new(0.5, -350 * s, 0.5, -220 * s)
+end
+
+themeBtn.MouseButton1Click:Connect(function()
+    local idx = table.find(themeOrder, Settings.UI.Theme) or 1
+    idx = idx % #themeOrder + 1
+    applyTheme(themeOrder[idx])
+end)
+scaleBtn.MouseButton1Click:Connect(function()
+    local idx = table.find(scaleOrder, Settings.UI.Scale) or 1
+    idx = idx % #scaleOrder + 1
+    applyScale(scaleOrder[idx])
+end)
+
+-- Keybind manager
 local kbHeader = Instance.new("TextLabel")
 kbHeader.Size = UDim2.new(1, -8, 0, 20)
 kbHeader.BackgroundTransparency = 1
@@ -2908,9 +3508,10 @@ local function UNLOAD()
     pcall(function() UIS.MouseBehavior = Enum.MouseBehavior.Default end)
     disconnectAll()
     stickyTarget = nil
-    if infJumpConn then infJumpConn:Disconnect(); infJumpConn = nil end
+    if infJumpConn then pcall(function() infJumpConn:Disconnect() end); infJumpConn = nil end
     if tpwalkConn then tpwalkConn:Disconnect(); tpwalkConn = nil end
     if antiFlingConn then antiFlingConn:Disconnect(); antiFlingConn = nil end
+    if grassConnection then grassConnection:Disconnect(); grassConnection = nil end
     stopHeadMover()
     if worldBackup then
         pcall(function()
@@ -2925,11 +3526,12 @@ local function UNLOAD()
             Lighting.EnvironmentSpecularScale = originalLighting.EnvironmentSpecularScale
         end)
     end
-    if originalFOV ~= nil then
-        pcall(function() Camera.FieldOfView = originalFOV end)
-    end
     for m, d in pairs(ESPData) do destroyESPStruct(d) end
     ESPData = {}
+    for inst, struct in pairs(ItemDrawings) do
+        if typeof(inst) == "Instance" then destroyItemStruct(struct) end
+    end
+    ItemDrawings = {}
     for _, obj in ipairs(AllDrawings) do pcall(function() obj:Remove() end) end
     AllDrawings = {}
     TargetLinePool = {}
@@ -2957,35 +3559,50 @@ end)
 -- MAIN LOOP
 --=====================================================================
 addConn(RunService.RenderStepped:Connect(function()
+    -- ESP
     if Settings.ESP.Enabled then drawESP()
     else for _, d in pairs(ESPData) do hideAllESP(d) end end
 
+    -- Crosshair
     drawCrosshair()
+
+    -- Target Line
     drawTargetLine()
 
-    if Settings.ItemESP.Enabled then
-        drawItemESPGeneric(ItemDrawings, Settings.ItemESP.FolderPath,
-            Settings.ItemESP.Color, Settings.ItemESP.MaxDistance, Settings.ItemESP.TextEnabled)
-    else
-        for inst, struct in pairs(ItemDrawings) do
-            pcall(function() struct.square.Visible = false end)
-            pcall(function() struct.text.Visible = false end)
+    -- Aim Visuals + Debug
+    if Settings.Aim.Enabled then
+        drawAimVisuals(currentTarget)
+        if isAimKeyDown() and currentTarget then
+            setMouseLock(true)
+        else
+            setMouseLock(false)
         end
+    else
+        drawAimVisuals(nil)
+        setMouseLock(false)
     end
+    drawAimDebug()
 
+    -- Items
+    drawItemESP()
+
+    -- World ESP
     if Settings.WorldESP.Enabled then
-        drawItemESPGeneric(WorldDrawings, Settings.WorldESP.FolderPath,
-            Settings.WorldESP.Color, Settings.WorldESP.MaxDistance, Settings.WorldESP.TextEnabled)
-    else
-        for inst, struct in pairs(WorldDrawings) do
-            pcall(function() struct.square.Visible = false end)
-            pcall(function() struct.text.Visible = false end)
-        end
+        -- используем старую функцию через generic (упрощённо: одна папка)
+        -- Item ESP уже покрывает; WorldESP — отдельная папка
+        -- (оставляем как заглушку, World ESP тоже можно юзать через ITEM_ESP_PATHS)
     end
 
-    updateAimbot()
     updateTrigger()
     updateInventoryESP()
+
+    -- World значение каждый кадр
+    keepWorldValues()
+    keepCameraFOV()
+end))
+
+addConn(RunService.Heartbeat:Connect(function()
+    heartbeatAimbot()
 end))
 
 --=====================================================================
@@ -3023,4 +3640,4 @@ CloseBtn.MouseButton1Click:Connect(function()
     Settings.UI.Open = false; Main.Visible = false
 end)
 
-notify("MixWare.lol v2.2 loaded! Mode " .. Settings.Mode, Theme.Accent)
+notify("MixWare.lol v2.6 loaded!", Theme.Accent)
