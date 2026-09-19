@@ -1,9 +1,22 @@
 --[[
-    MixWare.lol v2.6 (register-limit fix)
+    MixWare.lol v2.8
+    Combat → AimBot | Trigger
+    Visuals → Enemies | Items | Inventory | World | Crosshair
+    Misc → Misc | Config | Menu
+
+    Новое в 2.8:
+      - Мобильная кнопка аима (toggle, зелёная/красная)
+      - Долгое удержание 0.7с для перетаскивания кнопки/панелей/ватермарка
+      - Сохранение позиций в конфиг
+      - HSV ColorPicker с яркостью
+      - Hand/Weapon Chams
+      - Усиленный FullBright + ColorCorrection
+      - Мгновенный Custom FOV
+      - Freecam на K
 --]]
 
 --=====================================================================
--- API ОБЁРТКИ
+-- API
 --=====================================================================
 local cloneref = cloneref or function(o) return o end
 local gethui = gethui or function() return game:GetService("CoreGui") end
@@ -29,12 +42,13 @@ local HttpService = cloneref(game:GetService("HttpService"))
 local Stats = cloneref(game:GetService("Stats"))
 local SoundService = cloneref(game:GetService("SoundService"))
 local VirtualInputManager = cloneref(game:GetService("VirtualInputManager"))
+local TweenService = cloneref(game:GetService("TweenService"))
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 --=====================================================================
--- ГЛОБАЛЬНЫЙ ОБЪЕКТ
+-- ГЛАВНАЯ ТАБЛИЦА
 --=====================================================================
 local M = {}
 M.U = {}
@@ -45,16 +59,17 @@ M.ItemDrawings = {}
 M.WorldDrawings = {}
 M.Connections = {}
 M.ActiveConfigName = "none"
+M.IsMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
 
 --=====================================================================
 -- THEME
 --=====================================================================
 M.Themes = {
-    Purple = {Bg=Color3.fromRGB(18,14,26),Bg2=Color3.fromRGB(26,18,38),Panel=Color3.fromRGB(38,26,54),Row=Color3.fromRGB(44,30,62),Title=Color3.fromRGB(40,26,58),Accent=Color3.fromRGB(160,90,255),Accent2=Color3.fromRGB(220,120,255),Text=Color3.fromRGB(235,225,250),TextDim=Color3.fromRGB(160,140,190),Good=Color3.fromRGB(180,100,255),Bad=Color3.fromRGB(220,70,130),Stroke=Color3.fromRGB(85,55,130)},
-    Dark = {Bg=Color3.fromRGB(15,15,18),Bg2=Color3.fromRGB(22,22,26),Panel=Color3.fromRGB(32,32,38),Row=Color3.fromRGB(38,38,44),Title=Color3.fromRGB(34,34,40),Accent=Color3.fromRGB(90,140,240),Accent2=Color3.fromRGB(140,180,255),Text=Color3.fromRGB(230,230,240),TextDim=Color3.fromRGB(140,140,150),Good=Color3.fromRGB(90,140,240),Bad=Color3.fromRGB(210,70,90),Stroke=Color3.fromRGB(60,60,70)},
-    Blue = {Bg=Color3.fromRGB(12,18,30),Bg2=Color3.fromRGB(18,26,42),Panel=Color3.fromRGB(26,40,62),Row=Color3.fromRGB(32,48,74),Title=Color3.fromRGB(28,44,68),Accent=Color3.fromRGB(60,140,255),Accent2=Color3.fromRGB(120,190,255),Text=Color3.fromRGB(220,235,255),TextDim=Color3.fromRGB(140,170,210),Good=Color3.fromRGB(60,140,255),Bad=Color3.fromRGB(220,80,110),Stroke=Color3.fromRGB(60,100,150)},
-    Red = {Bg=Color3.fromRGB(20,12,14),Bg2=Color3.fromRGB(30,16,20),Panel=Color3.fromRGB(46,22,26),Row=Color3.fromRGB(56,28,32),Title=Color3.fromRGB(50,24,30),Accent=Color3.fromRGB(230,70,90),Accent2=Color3.fromRGB(255,130,150),Text=Color3.fromRGB(250,230,235),TextDim=Color3.fromRGB(200,150,160),Good=Color3.fromRGB(230,70,90),Bad=Color3.fromRGB(255,50,60),Stroke=Color3.fromRGB(120,50,60)},
-    Pink = {Bg=Color3.fromRGB(24,14,22),Bg2=Color3.fromRGB(36,20,32),Panel=Color3.fromRGB(54,28,48),Row=Color3.fromRGB(66,34,58),Title=Color3.fromRGB(58,30,52),Accent=Color3.fromRGB(255,110,180),Accent2=Color3.fromRGB(255,170,220),Text=Color3.fromRGB(250,225,240),TextDim=Color3.fromRGB(200,150,180),Good=Color3.fromRGB(255,110,180),Bad=Color3.fromRGB(230,60,120),Stroke=Color3.fromRGB(140,70,110)},
+    Purple = {Bg=Color3.fromRGB(18,14,26),Bg2=Color3.fromRGB(26,18,38),Panel=Color3.fromRGB(38,26,54),Row=Color3.fromRGB(44,30,62),Title=Color3.fromRGB(40,26,58),Accent=Color3.fromRGB(160,90,255),Accent2=Color3.fromRGB(220,120,255),Text=Color3.fromRGB(235,225,250),TextDim=Color3.fromRGB(160,140,190),Good=Color3.fromRGB(90,220,120),Bad=Color3.fromRGB(220,70,130),Stroke=Color3.fromRGB(85,55,130)},
+    Dark = {Bg=Color3.fromRGB(15,15,18),Bg2=Color3.fromRGB(22,22,26),Panel=Color3.fromRGB(32,32,38),Row=Color3.fromRGB(38,38,44),Title=Color3.fromRGB(34,34,40),Accent=Color3.fromRGB(90,140,240),Accent2=Color3.fromRGB(140,180,255),Text=Color3.fromRGB(230,230,240),TextDim=Color3.fromRGB(140,140,150),Good=Color3.fromRGB(90,220,120),Bad=Color3.fromRGB(210,70,90),Stroke=Color3.fromRGB(60,60,70)},
+    Blue = {Bg=Color3.fromRGB(12,18,30),Bg2=Color3.fromRGB(18,26,42),Panel=Color3.fromRGB(26,40,62),Row=Color3.fromRGB(32,48,74),Title=Color3.fromRGB(28,44,68),Accent=Color3.fromRGB(60,140,255),Accent2=Color3.fromRGB(120,190,255),Text=Color3.fromRGB(220,235,255),TextDim=Color3.fromRGB(140,170,210),Good=Color3.fromRGB(90,220,120),Bad=Color3.fromRGB(220,80,110),Stroke=Color3.fromRGB(60,100,150)},
+    Red = {Bg=Color3.fromRGB(20,12,14),Bg2=Color3.fromRGB(30,16,20),Panel=Color3.fromRGB(46,22,26),Row=Color3.fromRGB(56,28,32),Title=Color3.fromRGB(50,24,30),Accent=Color3.fromRGB(230,70,90),Accent2=Color3.fromRGB(255,130,150),Text=Color3.fromRGB(250,230,235),TextDim=Color3.fromRGB(200,150,160),Good=Color3.fromRGB(90,220,120),Bad=Color3.fromRGB(255,50,60),Stroke=Color3.fromRGB(120,50,60)},
+    Pink = {Bg=Color3.fromRGB(24,14,22),Bg2=Color3.fromRGB(36,20,32),Panel=Color3.fromRGB(54,28,48),Row=Color3.fromRGB(66,34,58),Title=Color3.fromRGB(58,30,52),Accent=Color3.fromRGB(255,110,180),Accent2=Color3.fromRGB(255,170,220),Text=Color3.fromRGB(250,225,240),TextDim=Color3.fromRGB(200,150,180),Good=Color3.fromRGB(90,220,120),Bad=Color3.fromRGB(230,60,120),Stroke=Color3.fromRGB(140,70,110)},
 }
 local Theme = M.Themes.Purple
 M.Theme = Theme
@@ -71,6 +86,8 @@ local Settings = {
     ESP = {
         Enabled=false, ChamsEnabled=false, ChamsColor=Color3.fromRGB(160,90,255), ChamsTransp=0.5,
         ChamsTargetColor=Color3.fromRGB(255,60,130),
+        HandChamsEnabled=false, HandChamsColor=Color3.fromRGB(255,150,200), HandChamsTransp=0.3,
+        WeaponChamsEnabled=false, WeaponChamsColor=Color3.fromRGB(150,255,150), WeaponChamsTransp=0.3,
         BoxEnabled=false, BoxColor=Color3.fromRGB(200,170,255), BoxThickness=1,
         CornerEnabled=false, CornerColor=Color3.fromRGB(180,100,255), CornerLength=10, CornerThickness=1,
         Box3DEnabled=false, Box3DColor=Color3.fromRGB(220,120,255),
@@ -88,7 +105,7 @@ local Settings = {
     Crosshair = {Enabled=false,Style="Cross",Color=Color3.fromRGB(255,255,255),OutlineColor=Color3.fromRGB(0,0,0),Gap=4,Length=8,Thickness=1,Dot=true,DotSize=2,CircleRadius=12,Outline=true,Rainbow=false},
     ItemESP = {Enabled=false,Color=Color3.fromRGB(220,180,100),MaxDistance=500,TextEnabled=true,RefreshRate=0.2,SelectedItems={}},
     WorldESP = {Enabled=false,Color=Color3.fromRGB(120,220,200),MaxDistance=500,TextEnabled=true},
-    World = {FullBright=false,NoFog=false,CustomTimeEnabled=false,CustomTime=14,CustomAmbientEnabled=false,AmbientColor=Color3.fromRGB(178,178,178),CameraFOVEnabled=false,CameraFOV=70,DisableSunRays=false,DisableAtmosphere=false,RemoveGrass=false},
+    World = {FullBright=false,NoFog=false,CustomTimeEnabled=false,CustomTime=14,CustomAmbientEnabled=false,AmbientColor=Color3.fromRGB(255,255,255),CameraFOVEnabled=false,CameraFOV=70,DisableSunRays=false,DisableAtmosphere=false,RemoveGrass=false,ColorCorrection=true},
     InvESP = {Enabled=false,Transparency=0.35,ShowLocal=true,FontSize=14,ShowTools=true,ShowHealth=true,RefreshInterval=0.25},
     Aim = {
         Enabled=false, FOV=120, ShowFOV=true, Instant=false, Smoothness=0.15,
@@ -100,16 +117,29 @@ local Settings = {
         TargetLineThickness=1, TargetLineTransparency=0.2, TargetLineOnlyAiming=true,
         TargetLineStyle="Solid", TargetLineDashCount=8,
         GroundOnly=false, DebugVisuals=false,
+        -- Mobile
+        MobileButtonShow=true,
+        MobileButtonX=0.82, MobileButtonY=0.75,
+        MobileButtonLocked=false,
     },
     Trigger = {Enabled=false,Delay=0.05,TeamCheck=true,WallCheck=false,OnlyAimKey=true},
-    Misc = {TPWalkEnabled=false,TPWalkSpeed=20,InfJump=false,WalkSpeed=16,JumpPower=50,AntiFling=false},
+    Misc = {
+        TPWalkEnabled=false, TPWalkSpeed=20, InfJump=false, WalkSpeed=16, JumpPower=50, AntiFling=false,
+        FreecamEnabled=false, FreecamKey=Enum.KeyCode.K, FreecamSpeed=1.5,
+    },
     Sound = {KillSound=true,TargetLockSound=true,KillSoundId="rbxassetid://5275866553",TargetLockSoundId="rbxassetid://876939830"},
-    UI = {Open=true,MenuKey=Enum.KeyCode.RightShift,UnloadKey=Enum.KeyCode.End,Watermark=true,Notifications=true,Theme="Purple",Scale="Medium"},
+    UI = {
+        Open=true, MenuKey=Enum.KeyCode.RightShift, UnloadKey=Enum.KeyCode.End,
+        Watermark=true, Notifications=true, Theme="Purple", Scale="Medium",
+        WatermarkX=0.01, WatermarkY=0.02,
+        InventoryX=0.72, InventoryY=0.25,
+        DragHoldTime=0.7,
+    },
 }
 M.Settings = Settings
 
 --=====================================================================
--- УТИЛИТЫ (в таблице U)
+-- УТИЛИТЫ
 --=====================================================================
 local U = M.U
 
@@ -126,6 +156,10 @@ end
 function U.getFOVOrigin() return Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2) end
 
 function U.isAimKeyDown()
+    -- Мобильная кнопка
+    if M.IsMobile and Settings.Aim.MobileButtonShow and M.MobileButtonActive then
+        return true
+    end
     local kn = Settings.Aim.KeyName
     if kn == "MouseButton2" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end
     if kn == "MouseButton1" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end
@@ -379,6 +413,7 @@ function U.createESPStruct()
     d.arrow.Filled = true
     d.weapon = U.newDrawing("Text")
     d.weapon.Center = true; d.weapon.Outline = true
+    d.highlights = {}
     return d
 end
 
@@ -396,7 +431,10 @@ function U.destroyESPStruct(d)
     pcall(function() d.nametag:Remove() end)
     pcall(function() d.arrow:Remove() end)
     pcall(function() d.weapon:Remove() end)
-    if d.highlight then pcall(function() d.highlight:Destroy() end) end
+    if d.highlights then
+        for _, h in pairs(d.highlights) do pcall(function() h:Destroy() end) end
+        d.highlights = nil
+    end
 end
 
 function U.hideAllESP(d)
@@ -413,46 +451,95 @@ function U.hideAllESP(d)
     d.nametag.Visible = false
     d.arrow.Visible = false
     d.weapon.Visible = false
-    if d.highlight then d.highlight.Enabled = false end
+    if d.highlights then
+        for _, h in pairs(d.highlights) do h.Enabled = false end
+    end
 end
 
 --=====================================================================
--- ESP RENDER
+-- CHAMS (обновлённый — основной + руки + оружие)
 --=====================================================================
-local ESP_INTERVAL = 1/60
-M.LastESPUpdate = 0
-
 function U.updateChamsForModel(model, isTarget)
     local d = M.ESPData[model]
     if not d then return end
-    if not Settings.ESP.ChamsEnabled then
-        if d.highlight then d.highlight.Enabled = false end
-        return
-    end
     if not model or not model.Parent then return end
-    if not d.highlight or not d.highlight.Parent then
-        local existing = model:FindFirstChild("MixWareChams")
-        if existing and existing:IsA("Highlight") then
-            d.highlight = existing
-        else
-            local h = Instance.new("Highlight")
-            h.Name = "MixWareChams"
-            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            h.Adornee = model
-            h.Parent = model
-            d.highlight = h
+
+    local paintList = {}
+
+    -- Основной Chams
+    if Settings.ESP.ChamsEnabled then
+        local mainColor
+        if isTarget then mainColor = Settings.ESP.ChamsTargetColor
+        elseif Settings.ESP.VisibleCheck and U.getVisibleStateForModel(model) then mainColor = Settings.ESP.VisibleColor
+        else mainColor = Settings.ESP.ChamsColor end
+        paintList[model] = { color = mainColor, transp = Settings.ESP.ChamsTransp, key = "main" }
+    end
+
+    -- Hand Chams
+    if Settings.ESP.HandChamsEnabled then
+        local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm","Left Arm","Right Arm"}
+        for _, name in ipairs(handNames) do
+            local part = model:FindFirstChild(name)
+            if part and part:IsA("BasePart") then
+                paintList[part] = { color = Settings.ESP.HandChamsColor, transp = Settings.ESP.HandChamsTransp, key = "hand_" .. name }
+            end
         end
     end
-    local color
-    if isTarget then color = Settings.ESP.ChamsTargetColor
-    elseif Settings.ESP.VisibleCheck and U.getVisibleStateForModel(model) then color = Settings.ESP.VisibleColor
-    else color = Settings.ESP.ChamsColor end
-    d.highlight.FillColor = color
-    d.highlight.OutlineColor = color
-    d.highlight.FillTransparency = Settings.ESP.ChamsTransp
-    d.highlight.OutlineTransparency = Settings.ESP.ChamsTransp * 0.5
-    d.highlight.Enabled = true
+
+    -- Weapon Chams
+    if Settings.ESP.WeaponChamsEnabled then
+        for _, child in ipairs(model:GetChildren()) do
+            if child:IsA("Tool") then
+                paintList[child] = { color = Settings.ESP.WeaponChamsColor, transp = Settings.ESP.WeaponChamsTransp, key = "weapon_" .. child.Name }
+            end
+        end
+        local hands = {model:FindFirstChild("RightHand"), model:FindFirstChild("LeftHand"), model:FindFirstChild("Right Arm"), model:FindFirstChild("Left Arm")}
+        for _, hand in ipairs(hands) do
+            if hand then
+                for _, child in ipairs(hand:GetChildren()) do
+                    if child:IsA("Tool") or child:IsA("Model") then
+                        paintList[child] = { color = Settings.ESP.WeaponChamsColor, transp = Settings.ESP.WeaponChamsTransp, key = "weapon_" .. child.Name }
+                    end
+                end
+            end
+        end
+    end
+
+    if not d.highlights then d.highlights = {} end
+    local activeKeys = {}
+
+    for obj, info in pairs(paintList) do
+        activeKeys[info.key] = true
+        local h = d.highlights[info.key]
+        if not h or not h.Parent then
+            h = Instance.new("Highlight")
+            h.Name = "MixWareChams_" .. info.key
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Adornee = obj
+            h.Parent = obj
+            d.highlights[info.key] = h
+        end
+        h.Adornee = obj
+        h.FillColor = info.color
+        h.OutlineColor = info.color
+        h.FillTransparency = info.transp
+        h.OutlineTransparency = info.transp * 0.5
+        h.Enabled = true
+    end
+
+    for key, h in pairs(d.highlights) do
+        if not activeKeys[key] then
+            pcall(function() h:Destroy() end)
+            d.highlights[key] = nil
+        end
+    end
 end
+
+--=====================================================================
+-- ESP DRAW
+--=====================================================================
+local ESP_INTERVAL = 1/60
+M.LastESPUpdate = 0
 
 U.SkeletonJoints = {
     {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
@@ -569,7 +656,6 @@ function U.drawESPForModel(model, plr)
     local x = topS.X - width / 2
     local y = topS.Y
 
-    -- Box
     if Settings.ESP.BoxEnabled then
         d.box.Size = Vector2.new(width, height)
         d.box.Position = Vector2.new(x, y)
@@ -579,7 +665,6 @@ function U.drawESPForModel(model, plr)
         d.box.Filled = false; d.box.Visible = true
     else d.box.Visible = false end
 
-    -- Corners
     if Settings.ESP.CornerEnabled then
         local L, t = Settings.ESP.CornerLength, Settings.ESP.CornerThickness
         local pts = {
@@ -600,7 +685,6 @@ function U.drawESPForModel(model, plr)
         end
     else for _, c in pairs(d.corners) do c.Visible = false end end
 
-    -- 3D Box
     if Settings.ESP.Box3DEnabled then
         local edges = {{1,2},{3,4},{5,6},{7,8},{1,3},{2,4},{5,7},{6,8},{1,5},{2,6},{3,7},{4,8}}
         local corners = {}
@@ -627,7 +711,6 @@ function U.drawESPForModel(model, plr)
         else for _, l in pairs(d.box3d) do l.Visible = false end end
     else for _, l in pairs(d.box3d) do l.Visible = false end end
 
-    -- Tracer
     if Settings.ESP.TracerEnabled then
         local vp = Camera.ViewportSize
         local origin
@@ -639,7 +722,6 @@ function U.drawESPForModel(model, plr)
         d.tracer.Thickness = 1; d.tracer.Transparency = alpha; d.tracer.Visible = true
     else d.tracer.Visible = false end
 
-    -- Name + shadow
     local displayName = model.Name
     if plr then displayName = (plr.DisplayName ~= "" and plr.DisplayName) or plr.Name end
     local namePos = Vector2.new(x + width/2, y - 16)
@@ -657,14 +739,12 @@ function U.drawESPForModel(model, plr)
     d.name.Transparency = alpha
     d.name.Visible = Settings.ESP.NameEnabled
 
-    -- Distance
     d.dist.Text = string.format("[%d]", math.floor(dist))
     d.dist.Position = Vector2.new(x + width/2, y + height + 2)
     d.dist.Color = override or Color3.fromRGB(200,200,200)
     d.dist.Transparency = alpha
     d.dist.Visible = Settings.ESP.DistanceEnabled
 
-    -- Weapon name
     if Settings.ESP.WeaponNameEnabled then
         local w = U.getWeaponName(model)
         if w then
@@ -677,13 +757,11 @@ function U.drawESPForModel(model, plr)
         else d.weapon.Visible = false end
     else d.weapon.Visible = false end
 
-    -- Skeleton
     if Settings.ESP.SkeletonEnabled then
         U.drawSkeleton(model, d, override or Settings.ESP.SkeletonColor, Settings.ESP.SkeletonThickness)
         for _, l in pairs(d.skeleton) do l.Transparency = alpha end
     else for _, l in pairs(d.skeleton) do l.Visible = false end end
 
-    -- Health bar (vertical left)
     if Settings.ESP.HealthBarEnabled and hum then
         local hpRatio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
         local bw = Settings.ESP.HealthBarWidth
@@ -712,7 +790,6 @@ function U.drawESPForModel(model, plr)
         d.hpFill.Filled = true; d.hpFill.Transparency = alpha; d.hpFill.Visible = true
     else d.hpBg.Visible = false; d.hpFill.Visible = false end
 
-    -- Nametag
     if Settings.ESP.NametagsEnabled and hum then
         local parts = {}
         if Settings.ESP.NametagsShowHP then table.insert(parts, string.format("[%d HP]", math.floor(hum.Health))) end
@@ -723,7 +800,6 @@ function U.drawESPForModel(model, plr)
         d.nametag.Transparency = alpha; d.nametag.Visible = true
     else d.nametag.Visible = false end
 
-    -- Arrows
     if Settings.ESP.ArrowsEnabled then
         local hp = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
         if hp then U.drawArrow(d, hp.Position, override or Settings.ESP.ArrowsColor, Settings.ESP.ArrowsSize) end
@@ -880,11 +956,9 @@ M.FovCircle.Transparency = 1
 M.FovCircle.Color = Theme.Accent
 M.FovCircle.Visible = false
 
--- Target line pool
 M.TargetLinePool = {}
 M.TargetLineSingle = U.newDrawing("Line")
 
--- Debug visuals
 M.DebugLine = U.newDrawing("Line")
 M.DebugDot = U.newDrawing("Circle")
 M.DebugDot.NumSides = 24
@@ -1021,10 +1095,11 @@ function U.aimAt(plr)
     local tp = U.getAimPoint(part)
     if not tp then return end
     pcall(function()
-        if Camera.CameraType ~= Enum.CameraType.Custom then
+        if Camera.CameraType ~= Enum.CameraType.Custom and not M.FreecamActive then
             Camera.CameraType = Enum.CameraType.Custom
         end
     end)
+    if M.FreecamActive then return end
     local camPos = Camera.CFrame.Position
     local targetCF = CFrame.lookAt(camPos, tp)
     if Settings.Aim.Instant then
@@ -1037,7 +1112,7 @@ function U.aimAt(plr)
 end
 
 function U.heartbeatAimbot()
-    if not Settings.Aim.Enabled then
+    if not Settings.Aim.Enabled or M.FreecamActive then
         M.CurrentTarget = nil; M.StickyTarget = nil
         return
     end
@@ -1061,7 +1136,7 @@ function U.setMouseLock(state)
 end
 
 function U.drawAimVisuals(target)
-    if Settings.Aim.ShowFOV and Settings.Aim.Enabled then
+    if Settings.Aim.ShowFOV and Settings.Aim.Enabled and not M.FreecamActive then
         M.FovCircle.Position = U.getFOVOrigin()
         M.FovCircle.Radius = Settings.Aim.FOV
         M.FovCircle.Visible = true
@@ -1130,9 +1205,7 @@ function U.drawAimDebug()
                 return
             end
         end
-    else
-        M.LastTargetTime = 0
-    end
+    else M.LastTargetTime = 0 end
     M.DebugLine.Visible = false
     M.DebugDot.Visible = false
     M.DebugReactionText.Visible = false
@@ -1166,7 +1239,7 @@ function U.ensureTargetLinePool(count)
 end
 
 function U.drawTargetLine()
-    if not Settings.Aim.TargetLine then
+    if not Settings.Aim.TargetLine or M.FreecamActive then
         M.TargetLineSingle.Visible = false
         for _, ln in ipairs(M.TargetLinePool) do ln.Visible = false end
         return
@@ -1379,19 +1452,29 @@ end
 
 function U.keepWorldValues()
     local w = Settings.World
-    if w.FullBright then U.backupLighting()
-        if Lighting.Brightness ~= 2 then pcall(function() Lighting.Brightness = 2 end) end
-        if Lighting.Ambient ~= Color3.fromRGB(178,178,178) then
+    if w.FullBright then
+        U.backupLighting()
+        if Lighting.Brightness ~= 3 then pcall(function() Lighting.Brightness = 3 end) end
+        if Lighting.Ambient ~= Color3.fromRGB(255,255,255) then
             pcall(function()
-                Lighting.Ambient = Color3.fromRGB(178,178,178)
-                Lighting.OutdoorAmbient = Color3.fromRGB(178,178,178)
+                Lighting.Ambient = Color3.fromRGB(255,255,255)
+                Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
             end)
         end
-        if Lighting.GlobalShadows then pcall(function() Lighting.GlobalShadows = false end) end
+        if Lighting.GlobalShadows ~= false then pcall(function() Lighting.GlobalShadows = false end) end
         if Lighting.FogEnd ~= math.huge then
             pcall(function() Lighting.FogEnd = math.huge; Lighting.FogStart = 0 end)
         end
+        if Lighting.ClockTime < 11 or Lighting.ClockTime > 13 then
+            pcall(function() Lighting.ClockTime = 12 end)
+        end
+        for _, obj in ipairs(Lighting:GetChildren()) do
+            if obj:IsA("Atmosphere") then pcall(function() obj.Enabled = false end) end
+            if obj:IsA("SunRaysEffect") then pcall(function() obj.Enabled = false end) end
+            if obj:IsA("BlurEffect") then pcall(function() obj.Enabled = false end) end
+        end
     end
+
     if w.NoFog and Lighting.FogEnd ~= math.huge then
         pcall(function() Lighting.FogEnd = math.huge end)
     end
@@ -1404,6 +1487,25 @@ function U.keepWorldValues()
             Lighting.OutdoorAmbient = w.AmbientColor
         end)
     end
+
+    if w.ColorCorrection and (w.FullBright or w.CustomAmbientEnabled) then
+        local cc = M.ColorCorrection
+        if not cc or not cc.Parent then
+            cc = Instance.new("ColorCorrectionEffect")
+            cc.Name = "MixWareColorCorrection"
+            cc.Parent = Lighting
+            M.ColorCorrection = cc
+        end
+        cc.Brightness = w.FullBright and 0.3 or 0.1
+        cc.Contrast = 0
+        cc.Saturation = 0
+        cc.TintColor = Color3.fromRGB(255, 255, 255)
+    else
+        if M.ColorCorrection then
+            pcall(function() M.ColorCorrection:Destroy() end)
+            M.ColorCorrection = nil
+        end
+    end
 end
 
 function U.applyRemoveGrass()
@@ -1414,7 +1516,7 @@ end
 
 function U.keepCameraFOV()
     if Settings.World.CameraFOVEnabled then
-        if math.abs(Camera.FieldOfView - Settings.World.CameraFOV) > 0.01 then
+        if math.abs(Camera.FieldOfView - Settings.World.CameraFOV) > 0.01 and not M.FreecamActive then
             pcall(function() Camera.FieldOfView = Settings.World.CameraFOV end)
         end
     end
@@ -1493,6 +1595,73 @@ U.addConn(LocalPlayer.CharacterAdded:Connect(function()
     if Settings.Misc.InfJump then U.setInfJump(true) end
     if Settings.Misc.TPWalkEnabled then U.setTPWalk(true) end
     if Settings.Misc.AntiFling then U.setAntiFling(true) end
+end))
+
+--=====================================================================
+-- FREECAM
+--=====================================================================
+M.FreecamActive = false
+M.FreecamConn = nil
+M.FreecamCFrame = nil
+M.FreecamVel = Vector3.zero
+M.FreecamSavedSubject = nil
+
+function U.startFreecam()
+    if M.FreecamActive then return end
+    M.FreecamActive = true
+    M.FreecamSavedSubject = Camera.CameraSubject
+    M.FreecamCFrame = Camera.CFrame
+    pcall(function()
+        Camera.CameraType = Enum.CameraType.Scriptable
+        Camera.CameraSubject = nil
+    end)
+    M.FreecamConn = RunService.RenderStepped:Connect(function(dt)
+        if not M.FreecamActive then return end
+        local move = Vector3.zero
+        local speed = Settings.Misc.FreecamSpeed * 50
+        if UIS:IsKeyDown(Enum.KeyCode.W) then move = move + M.FreecamCFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then move = move - M.FreecamCFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then move = move - M.FreecamCFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then move = move + M.FreecamCFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+            move = move - Vector3.new(0, 1, 0)
+        end
+        if move.Magnitude > 0 then
+            M.FreecamVel = M.FreecamVel:Lerp(move.Unit * speed, math.clamp(dt * 15, 0, 1))
+        else
+            M.FreecamVel = M.FreecamVel:Lerp(Vector3.zero, math.clamp(dt * 20, 0, 1))
+        end
+        M.FreecamCFrame = M.FreecamCFrame + M.FreecamVel * dt
+        Camera.CFrame = M.FreecamCFrame
+    end)
+end
+
+function U.stopFreecam()
+    if not M.FreecamActive then return end
+    M.FreecamActive = false
+    if M.FreecamConn then M.FreecamConn:Disconnect(); M.FreecamConn = nil end
+    pcall(function()
+        Camera.CameraType = Enum.CameraType.Custom
+        Camera.CameraSubject = M.FreecamSavedSubject or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid"))
+    end)
+end
+
+function U.toggleFreecam()
+    if M.FreecamActive then
+        U.stopFreecam()
+        U.notify("Freecam OFF", Theme.Bad)
+    else
+        U.startFreecam()
+        U.notify("Freecam ON (WASD/Space/Ctrl)", Theme.Good)
+    end
+end
+
+U.addConn(UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Settings.Misc.FreecamKey then
+        U.toggleFreecam()
+    end
 end))
 
 --=====================================================================
@@ -1582,7 +1751,91 @@ function U.updateTrigger()
 end
 
 --=====================================================================
--- GUI (после инициализации логики)
+-- DRAG UTILITY (для кнопки, панели, watermark)
+--=====================================================================
+function U.attachDrag(frame, xKey, yKey, isMobileOnly)
+    if isMobileOnly and not M.IsMobile then
+        frame.Draggable = true  -- на ПК обычный drag
+        return
+    end
+    if not isMobileOnly then
+        frame.Draggable = false  -- отключаем стандартный, будем тащить сами
+    else
+        frame.Draggable = false
+    end
+
+    local holdStart = 0
+    local dragging = false
+    local dragOffset = Vector2.zero
+    local lastPos = Vector2.zero
+
+    local function getPos()
+        return frame.AbsolutePosition
+    end
+
+    local function setPosFromAbs(absX, absY)
+        -- absolute -> scale + offset от родителя
+        local parent = frame.Parent
+        local parentAbs = parent and parent.AbsolutePosition or Vector2.zero
+        local parentSize = parent and parent.AbsoluteSize or Camera.ViewportSize
+        local relX = (absX - parentAbs.X) / parentSize.X
+        local relY = (absY - parentAbs.Y) / parentSize.Y
+        frame.Position = UDim2.new(relX, 0, relY, 0)
+        -- Сохраняем в Settings
+        if xKey then U.setPath(xKey, relX) end
+        if yKey then U.setPath(yKey, relY) end
+    end
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            holdStart = tick()
+            dragOffset = Vector2.new(input.Position.X, input.Position.Y) - getPos()
+        end
+    end)
+
+    U.addConn(UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            setPosFromAbs(input.Position.X - dragOffset.X, input.Position.Y - dragOffset.Y)
+        end
+    end))
+
+    U.addConn(UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+
+    -- Проверка долгого удержания в RenderStepped
+    U.addConn(RunService.RenderStepped:Connect(function()
+        if holdStart > 0 and not dragging then
+            if tick() - holdStart >= Settings.UI.DragHoldTime then
+                -- проверяем что палец ещё касается
+                local touching = UIS:GetFocusedTextBox() == nil
+                local anyInput = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+                local anyTouch = false
+                for _, t in ipairs(UIS:GetTouches()) do anyTouch = true; break end
+                if anyInput or anyTouch then
+                    dragging = true
+                    holdStart = 0
+                    if M.MobileButtonLockedCheck and M.MobileButtonLockedCheck() then
+                        dragging = false
+                    end
+                else
+                    holdStart = 0
+                end
+            end
+        end
+        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and #UIS:GetTouches() == 0 then
+            holdStart = 0
+        end
+    end))
+end
+
+--=====================================================================
+-- GUI
 --=====================================================================
 local parentGui = (function()
     local ok, hui = pcall(gethui)
@@ -1601,18 +1854,64 @@ M.ScreenGui = ScreenGui
 U.setupNotifyHolder(ScreenGui)
 
 --=====================================================================
+-- WATERMARK
+--=====================================================================
+do
+    local wm = Instance.new("Frame", ScreenGui)
+    wm.Size = UDim2.new(0, 100, 0, 28)
+    wm.Position = UDim2.new(Settings.UI.WatermarkX, 0, Settings.UI.WatermarkY, 0)
+    wm.BackgroundColor3 = Theme.Title
+    wm.BackgroundTransparency = 0.15
+    wm.BorderSizePixel = 0
+    wm.Visible = Settings.UI.Watermark
+    wm.AutomaticSize = Enum.AutomaticSize.X
+    Instance.new("UICorner", wm).CornerRadius = UDim.new(0, 8)
+    local ws = Instance.new("UIStroke", wm)
+    ws.Color = Theme.Accent; ws.Thickness = 1; ws.Transparency = 0.4
+    local wp = Instance.new("UIPadding", wm)
+    wp.PaddingLeft = UDim.new(0, 12); wp.PaddingRight = UDim.new(0, 12)
+    local wt = Instance.new("TextLabel", wm)
+    wt.Size = UDim2.new(0, 0, 1, 0)
+    wt.BackgroundTransparency = 1
+    wt.Text = "MixWare.lol"
+    wt.TextColor3 = Theme.Text
+    wt.Font = Enum.Font.GothamMedium
+    wt.TextSize = 12
+    wt.TextXAlignment = Enum.TextXAlignment.Left
+    wt.AutomaticSize = Enum.AutomaticSize.X
+    M.Watermark = wm
+    M.WatermarkText = wt
+
+    U.attachDrag(wm, "UI.WatermarkX", "UI.WatermarkY", false)
+
+    task.spawn(function()
+        while ScreenGui.Parent do
+            local fps = math.floor(1 / math.max(RunService.RenderStepped:Wait(), 1e-6))
+            local ping = 0
+            pcall(function()
+                ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+            end)
+            local time = os.date("%H:%M:%S")
+            local pc = #Players:GetPlayers()
+            wt.Text = string.format(
+                "  MixWare.lol v2.8   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+                M.ActiveConfigName, time, fps, ping, pc)
+            task.wait(0.5)
+        end
+    end)
+end
+
+--=====================================================================
 -- INVENTORY PANEL
 --=====================================================================
-M.InvPanel = Instance.new("Frame")
+M.InvPanel = Instance.new("Frame", ScreenGui)
 M.InvPanel.Size = UDim2.new(0, 280, 0, 260)
-M.InvPanel.Position = UDim2.new(0.72, 0, 0.25, 0)
+M.InvPanel.Position = UDim2.new(Settings.UI.InventoryX, 0, Settings.UI.InventoryY, 0)
 M.InvPanel.BackgroundColor3 = Theme.Bg
 M.InvPanel.BackgroundTransparency = Settings.InvESP.Transparency
 M.InvPanel.BorderSizePixel = 0
 M.InvPanel.Active = true
-M.InvPanel.Draggable = true
 M.InvPanel.Visible = false
-M.InvPanel.Parent = ScreenGui
 Instance.new("UICorner", M.InvPanel).CornerRadius = UDim.new(0, 10)
 local InvStroke = Instance.new("UIStroke", M.InvPanel)
 InvStroke.Color = Theme.Accent; InvStroke.Thickness = 1; InvStroke.Transparency = 0.3
@@ -1668,6 +1967,8 @@ function U.clearInvList()
     for _, r in ipairs(M.InvRows) do r:Destroy() end
     M.InvRows = {}
 end
+
+U.attachDrag(M.InvPanel, "UI.InventoryX", "UI.InventoryY", false)
 
 function U.gatherAllTools(plr)
     local seen, tools = {}, {}
@@ -1781,6 +2082,141 @@ function U.updateInventoryESP()
 end
 
 --=====================================================================
+-- MOBILE AIM BUTTON
+--=====================================================================
+M.MobileButtonActive = false
+M.MobileAimBtn = nil
+M.MobileAimBtnConn = nil
+
+function U.createMobileAimButton()
+    if M.MobileAimBtn then return end
+    if not M.IsMobile then return end
+    if not Settings.Aim.MobileButtonShow then return end
+
+    local btn = Instance.new("TextButton", ScreenGui)
+    btn.Size = UDim2.new(0, 80, 0, 80)
+    btn.Position = UDim2.new(Settings.Aim.MobileButtonX, 0, Settings.Aim.MobileButtonY, 0)
+    btn.BackgroundColor3 = Theme.Bad
+    btn.BackgroundTransparency = 0.2
+    btn.Text = "AIM"
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 16
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = Theme.Stroke
+    stroke.Thickness = 2
+
+    -- Замок в углу
+    local lock = Instance.new("TextButton", btn)
+    lock.Size = UDim2.new(0, 20, 0, 20)
+    lock.Position = UDim2.new(1, -22, 0, 2)
+    lock.BackgroundColor3 = Theme.Panel
+    lock.Text = "🔓"
+    lock.TextColor3 = Theme.Text
+    lock.Font = Enum.Font.GothamBold
+    lock.TextSize = 12
+    lock.BorderSizePixel = 0
+    Instance.new("UICorner", lock).CornerRadius = UDim.new(1, 0)
+
+    lock.MouseButton1Click:Connect(function()
+        Settings.Aim.MobileButtonLocked = not Settings.Aim.MobileButtonLocked
+        lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
+    end)
+    lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
+
+    -- Основной tap = toggle
+    btn.MouseButton1Click:Connect(function()
+        if Settings.Aim.MobileButtonLocked then
+            -- если locked — кнопка не тащится, но toggle работает
+            M.MobileButtonActive = not M.MobileButtonActive
+            btn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
+            return
+        end
+        -- иначе начинаем отслеживать long-hold
+        -- Логика: если тап короткий — toggle. Если долгий — drag.
+        -- Реализуем через InputBegan/InputEnded вручную, чтобы отличить.
+    end)
+
+    -- Полная реализация tap vs hold
+    local holdStart = 0
+    local isDragging = false
+    local dragOffset = Vector2.zero
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            holdStart = tick()
+            isDragging = false
+            dragOffset = Vector2.new(input.Position.X, input.Position.Y) - btn.AbsolutePosition
+        end
+    end)
+
+    U.addConn(UIS.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local parentAbs = btn.Parent and btn.Parent.AbsolutePosition or Vector2.zero
+            local parentSize = btn.Parent and btn.Parent.AbsoluteSize or Camera.ViewportSize
+            local relX = (input.Position.X - dragOffset.X - parentAbs.X) / parentSize.X
+            local relY = (input.Position.Y - dragOffset.Y - parentAbs.Y) / parentSize.Y
+            btn.Position = UDim2.new(relX, 0, relY, 0)
+            U.setPath("Aim.MobileButtonX", relX)
+            U.setPath("Aim.MobileButtonY", relY)
+        end
+    end))
+
+    U.addConn(UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local heldTime = tick() - holdStart
+            if isDragging then
+                isDragging = false
+            elseif heldTime >= Settings.UI.DragHoldTime then
+                -- долго держали но не двигались
+            else
+                -- короткий тап → toggle
+                if not Settings.Aim.MobileButtonLocked then
+                    M.MobileButtonActive = not M.MobileButtonActive
+                    btn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
+                end
+            end
+            holdStart = 0
+        end
+    end))
+
+    -- Проверка в RenderStepped для drag после долгого удержания
+    U.addConn(RunService.RenderStepped:Connect(function()
+        if holdStart > 0 and not isDragging and not Settings.Aim.MobileButtonLocked then
+            if tick() - holdStart >= Settings.UI.DragHoldTime then
+                local anyInput = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+                local anyTouch = #UIS:GetTouches() > 0
+                if anyInput or anyTouch then
+                    isDragging = true
+                else
+                    holdStart = 0
+                end
+            end
+        end
+        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and #UIS:GetTouches() == 0 then
+            holdStart = 0
+        end
+    end))
+
+    M.MobileAimBtn = btn
+end
+
+function U.setMobileButtonVisible(state)
+    if state and M.IsMobile then
+        U.createMobileAimButton()
+        if M.MobileAimBtn then M.MobileAimBtn.Visible = true end
+    else
+        if M.MobileAimBtn then M.MobileAimBtn.Visible = false end
+    end
+end
+
+--=====================================================================
 -- UI HELPERS
 --=====================================================================
 M.UIRefs = {}
@@ -1884,17 +2320,23 @@ function U.makeSlider(parent, text, min, max, path, cb)
         if cb then cb(v) end
     end
     barBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true; setFromX(input.Position.X)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            setFromX(input.Position.X)
         end
     end)
     U.addConn(UIS.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
             setFromX(input.Position.X)
         end
     end))
     U.addConn(UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
     end))
     U.registerUI(path, function(v) apply(v); if cb then cb(v) end end)
     return row
@@ -1914,25 +2356,38 @@ function U.makeButton(parent, text, cb)
     return row
 end
 
+--=====================================================================
+-- HSV COLORPICKER (с яркостью)
+--=====================================================================
 function U.makeColorPicker(parent, text, path, cb)
-    local row = U.makeRow(parent, 40)
+    local row = U.makeRow(parent, 76)
     local lbl = Instance.new("TextLabel", row)
-    lbl.Size = UDim2.new(1, -60, 0, 18); lbl.Position = UDim2.new(0, 10, 0, 2)
+    lbl.Size = UDim2.new(1, -60, 0, 16); lbl.Position = UDim2.new(0, 10, 0, 2)
     lbl.BackgroundTransparency = 1
     lbl.Text = text; lbl.TextColor3 = Theme.Text
     lbl.Font = Enum.Font.Gotham; lbl.TextSize = 13
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+
     local initial = U.getPath(path) or Color3.new(1,1,1)
+
     local swatch = Instance.new("Frame", row)
     swatch.Size = UDim2.new(0, 40, 0, 20); swatch.Position = UDim2.new(1, -50, 0, 2)
-    swatch.BackgroundColor3 = initial; swatch.BorderSizePixel = 0
+    swatch.BackgroundColor3 = initial
+    swatch.BorderSizePixel = 0
     Instance.new("UICorner", swatch).CornerRadius = UDim.new(0, 5)
+    local swatchStroke = Instance.new("UIStroke", swatch)
+    swatchStroke.Color = Theme.Stroke; swatchStroke.Thickness = 1
+
+    local h, s, v = Color3.toHSV(initial)
+    s = 1
+
     local hueBar = Instance.new("Frame", row)
-    hueBar.Size = UDim2.new(0, 200, 0, 14); hueBar.Position = UDim2.new(0, 10, 0, 22)
+    hueBar.Size = UDim2.new(1, -20, 0, 14)
+    hueBar.Position = UDim2.new(0, 10, 0, 26)
     hueBar.BorderSizePixel = 0
     Instance.new("UICorner", hueBar).CornerRadius = UDim.new(0, 3)
-    local grad = Instance.new("UIGradient", hueBar)
-    grad.Color = ColorSequence.new({
+    local hueGrad = Instance.new("UIGradient", hueBar)
+    hueGrad.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255,0,0)),
         ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255,255,0)),
         ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0,255,0)),
@@ -1941,45 +2396,104 @@ function U.makeColorPicker(parent, text, path, cb)
         ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255,0,255)),
         ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255,0,0)),
     })
-    local marker = Instance.new("Frame", hueBar)
-    marker.Size = UDim2.new(0, 3, 1, 2); marker.Position = UDim2.new(0, 0, 0, -1)
-    marker.BackgroundColor3 = Color3.new(1,1,1); marker.BorderSizePixel = 0
-    Instance.new("UICorner", marker).CornerRadius = UDim.new(0, 2)
-    local h, s, v = Color3.toHSV(initial)
-    local dragging = false
-    local function apply(c)
-        local nh, ns, nv = Color3.toHSV(c)
-        h, s, v = nh, ns, nv
-        marker.Position = UDim2.new(h, -1, 0, -1)
-        swatch.BackgroundColor3 = Color3.fromHSV(h, s, v)
+    local hueMarker = Instance.new("Frame", hueBar)
+    hueMarker.Size = UDim2.new(0, 3, 1, 2)
+    hueMarker.Position = UDim2.new(h, -1, 0, -1)
+    hueMarker.BackgroundColor3 = Color3.new(1,1,1)
+    hueMarker.BorderSizePixel = 0
+    Instance.new("UICorner", hueMarker).CornerRadius = UDim.new(0, 2)
+    local hueMarkerStroke = Instance.new("UIStroke", hueMarker)
+    hueMarkerStroke.Color = Color3.new(0,0,0); hueMarkerStroke.Thickness = 1
+
+    local brightBar = Instance.new("Frame", row)
+    brightBar.Size = UDim2.new(1, -20, 0, 14)
+    brightBar.Position = UDim2.new(0, 10, 0, 48)
+    brightBar.BorderSizePixel = 0
+    Instance.new("UICorner", brightBar).CornerRadius = UDim.new(0, 3)
+    local brightGrad = Instance.new("UIGradient", brightBar)
+    local function updateBrightGradient()
+        local c = Color3.fromHSV(h, 1, 1)
+        brightGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(0,0,0)),
+            ColorSequenceKeypoint.new(1, c),
+        })
     end
-    local function applyHue(x)
-        local rel = math.clamp((x - hueBar.AbsolutePosition.X) / hueBar.AbsoluteSize.X, 0, 1)
-        h = rel
-        marker.Position = UDim2.new(rel, -1, 0, -1)
+    updateBrightGradient()
+    local brightMarker = Instance.new("Frame", brightBar)
+    brightMarker.Size = UDim2.new(0, 3, 1, 2)
+    brightMarker.Position = UDim2.new(v, -1, 0, -1)
+    brightMarker.BackgroundColor3 = Color3.new(1,1,1)
+    brightMarker.BorderSizePixel = 0
+    Instance.new("UICorner", brightMarker).CornerRadius = UDim.new(0, 2)
+    local brightMarkerStroke = Instance.new("UIStroke", brightMarker)
+    brightMarkerStroke.Color = Color3.new(0,0,0); brightMarkerStroke.Thickness = 1
+
+    local function emit()
         local c = Color3.fromHSV(h, s, v)
         swatch.BackgroundColor3 = c
         U.setPath(path, c)
         if cb then cb(c) end
     end
+
+    local hueDrag = false
+    local function hueFromX(x)
+        local rel = math.clamp((x - hueBar.AbsolutePosition.X) / hueBar.AbsoluteSize.X, 0, 1)
+        h = rel
+        hueMarker.Position = UDim2.new(rel, -1, 0, -1)
+        updateBrightGradient()
+        emit()
+    end
     hueBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true; applyHue(input.Position.X)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            hueDrag = true
+            hueFromX(input.Position.X)
         end
     end)
+
+    local brightDrag = false
+    local function brightFromX(x)
+        local rel = math.clamp((x - brightBar.AbsolutePosition.X) / brightBar.AbsoluteSize.X, 0, 1)
+        v = math.clamp(rel, 0.05, 1)
+        brightMarker.Position = UDim2.new(v, -1, 0, -1)
+        emit()
+    end
+    brightBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            brightDrag = true
+            brightFromX(input.Position.X)
+        end
+    end)
+
     U.addConn(UIS.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            applyHue(input.Position.X)
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            if hueDrag then hueFromX(input.Position.X) end
+            if brightDrag then brightFromX(input.Position.X) end
         end
     end))
     U.addConn(UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            hueDrag = false
+            brightDrag = false
+        end
     end))
-    marker.Position = UDim2.new(h, -1, 0, -1)
-    swatch.BackgroundColor3 = Color3.fromHSV(h, s, v)
+
+    emit()
+
     U.registerUI(path, function(c)
-        if typeof(c) == "Color3" then apply(c); if cb then cb(c) end end
+        if typeof(c) ~= "Color3" then return end
+        local nh, ns, nv = Color3.toHSV(c)
+        h, s, v = nh, ns, nv
+        hueMarker.Position = UDim2.new(h, -1, 0, -1)
+        brightMarker.Position = UDim2.new(v, -1, 0, -1)
+        updateBrightGradient()
+        swatch.BackgroundColor3 = Color3.fromHSV(h, s, v)
+        if cb then cb(c) end
     end)
+
     return row
 end
 
@@ -2016,14 +2530,13 @@ end
 --=====================================================================
 -- MAIN WINDOW
 --=====================================================================
-M.Main = Instance.new("Frame")
+M.Main = Instance.new("Frame", ScreenGui)
 M.Main.Size = UDim2.new(0, 700, 0, 440)
 M.Main.Position = UDim2.new(0.5, -350, 0.5, -220)
 M.Main.BackgroundColor3 = Theme.Bg
 M.Main.BorderSizePixel = 0
 M.Main.Active = true
 M.Main.Draggable = true
-M.Main.Parent = ScreenGui
 Instance.new("UICorner", M.Main).CornerRadius = UDim.new(0, 10)
 local MainGrad = Instance.new("UIGradient", M.Main)
 MainGrad.Color = ColorSequence.new({
@@ -2052,7 +2565,7 @@ TitleGrad.Color = ColorSequence.new({
 M.Title = Instance.new("TextLabel", M.TitleBar)
 M.Title.Size = UDim2.new(1, -80, 1, 0); M.Title.Position = UDim2.new(0, 14, 0, 0)
 M.Title.BackgroundTransparency = 1
-M.Title.Text = "MixWare.lol  •  v2.6"
+M.Title.Text = "MixWare.lol  •  v2.8"
 M.Title.TextColor3 = Theme.Text
 M.Title.Font = Enum.Font.GothamBold
 M.Title.TextSize = 13
@@ -2061,10 +2574,8 @@ M.Title.TextXAlignment = Enum.TextXAlignment.Left
 M.MinBtn = Instance.new("TextButton", M.TitleBar)
 M.MinBtn.Size = UDim2.new(0, 24, 0, 24); M.MinBtn.Position = UDim2.new(1, -60, 0, 5)
 M.MinBtn.BackgroundColor3 = Theme.Panel
-M.MinBtn.Text = "—"
-M.MinBtn.TextColor3 = Theme.Text
-M.MinBtn.Font = Enum.Font.GothamBold
-M.MinBtn.TextSize = 12
+M.MinBtn.Text = "—"; M.MinBtn.TextColor3 = Theme.Text
+M.MinBtn.Font = Enum.Font.GothamBold; M.MinBtn.TextSize = 12
 M.MinBtn.BorderSizePixel = 0
 Instance.new("UICorner", M.MinBtn).CornerRadius = UDim.new(0, 5)
 
@@ -2211,6 +2722,11 @@ U.makeSlider(AimPage, "Head Mover Distance", 5, 200, "Aim.HeadMoverDistance")
 U.makeSlider(AimPage, "Head Mover Speed", 0.05, 1, "Aim.HeadMoverSpeed")
 U.makeToggle(AimPage, "Head Mover Only When Aiming", "Aim.HeadMoverOnlyAimKey")
 
+-- Mobile button
+U.makeToggle(AimPage, "Mobile Aim Button", "Aim.MobileButtonShow", function(v)
+    U.setMobileButtonVisible(v)
+end)
+
 do
     local keyRow = U.makeRow(AimPage)
     local keyLbl = Instance.new("TextLabel", keyRow)
@@ -2265,6 +2781,12 @@ U.makeToggle(EnemiesPage, "Chams (Highlight)", "ESP.ChamsEnabled")
 U.makeColorPicker(EnemiesPage, "Chams Color", "ESP.ChamsColor")
 U.makeColorPicker(EnemiesPage, "Chams Target Color", "ESP.ChamsTargetColor")
 U.makeSlider(EnemiesPage, "Chams Transparency", 0, 1, "ESP.ChamsTransp")
+U.makeToggle(EnemiesPage, "Hand Chams", "ESP.HandChamsEnabled")
+U.makeColorPicker(EnemiesPage, "Hand Chams Color", "ESP.HandChamsColor")
+U.makeSlider(EnemiesPage, "Hand Chams Transparency", 0, 1, "ESP.HandChamsTransp")
+U.makeToggle(EnemiesPage, "Weapon Chams", "ESP.WeaponChamsEnabled")
+U.makeColorPicker(EnemiesPage, "Weapon Chams Color", "ESP.WeaponChamsColor")
+U.makeSlider(EnemiesPage, "Weapon Chams Transparency", 0, 1, "ESP.WeaponChamsTransp")
 U.makeToggle(EnemiesPage, "Box ESP", "ESP.BoxEnabled")
 U.makeColorPicker(EnemiesPage, "Box Color", "ESP.BoxColor")
 U.makeSlider(EnemiesPage, "Box Thickness", 1, 5, "ESP.BoxThickness")
@@ -2322,7 +2844,7 @@ U.makeToggle(CrosshairPage, "Dot", "Crosshair.Dot")
 U.makeSlider(CrosshairPage, "Dot Size", 1, 8, "Crosshair.DotSize")
 
 --=====================================================================
--- ITEMS PAGE (with popup selector)
+-- ITEMS PAGE
 --=====================================================================
 U.makeToggle(ItemsPage, "Item ESP", "ItemESP.Enabled")
 U.makeColorPicker(ItemsPage, "Item Color", "ItemESP.Color")
@@ -2460,6 +2982,8 @@ U.makeToggle(InventoryPage, "Show Local Player", "InvESP.ShowLocal")
 U.makeToggle(InventoryPage, "Show Health Bar", "InvESP.ShowHealth")
 U.makeToggle(InventoryPage, "Show Tools", "InvESP.ShowTools")
 U.makeButton(InventoryPage, "Reset Panel Position", function()
+    U.setPath("UI.InventoryX", 0.72)
+    U.setPath("UI.InventoryY", 0.25)
     M.InvPanel.Position = UDim2.new(0.72, 0, 0.25, 0)
 end)
 
@@ -2476,11 +3000,22 @@ U.makeToggle(WorldPage, "Custom Time of Day", "World.CustomTimeEnabled")
 U.makeSlider(WorldPage, "Time", 0, 24, "World.CustomTime")
 U.makeToggle(WorldPage, "Custom Ambient", "World.CustomAmbientEnabled")
 U.makeColorPicker(WorldPage, "Ambient Color", "World.AmbientColor")
+U.makeToggle(WorldPage, "Color Correction", "World.ColorCorrection")
 U.makeToggle(WorldPage, "Disable Sun Rays", "World.DisableSunRays")
 U.makeToggle(WorldPage, "Disable Atmosphere", "World.DisableAtmosphere")
 U.makeToggle(WorldPage, "Remove Grass", "World.RemoveGrass", function() U.applyRemoveGrass() end)
-U.makeToggle(WorldPage, "Custom Camera FOV", "World.CameraFOVEnabled")
-U.makeSlider(WorldPage, "Camera FOV", 30, 120, "World.CameraFOV")
+U.makeToggle(WorldPage, "Custom Camera FOV", "World.CameraFOVEnabled", function(v)
+    if v then
+        pcall(function() Camera.FieldOfView = Settings.World.CameraFOV end)
+    else
+        pcall(function() Camera.FieldOfView = 70 end)
+    end
+end)
+U.makeSlider(WorldPage, "Camera FOV", 30, 120, "World.CameraFOV", function(v)
+    if Settings.World.CameraFOVEnabled then
+        pcall(function() Camera.FieldOfView = v end)
+    end
+end)
 
 --=====================================================================
 -- MISC PAGE
@@ -2491,6 +3026,10 @@ U.makeToggle(MiscPage, "Infinite Jump", "Misc.InfJump", function(v) U.setInfJump
 U.makeSlider(MiscPage, "WalkSpeed", 1, 500, "Misc.WalkSpeed", function(v) U.applyWalkSpeed(v) end)
 U.makeSlider(MiscPage, "JumpPower", 1, 500, "Misc.JumpPower", function(v) U.applyJumpPower(v) end)
 U.makeToggle(MiscPage, "Anti-Fling", "Misc.AntiFling", function(v) U.setAntiFling(v) end)
+U.makeToggle(MiscPage, "Freecam (bind K)", "Misc.FreecamEnabled", function(v)
+    if v then U.startFreecam() else U.stopFreecam() end
+end)
+U.makeSlider(MiscPage, "Freecam Speed", 0.5, 10, "Misc.FreecamSpeed")
 U.makeToggle(MiscPage, "Kill Sound", "Sound.KillSound")
 U.makeToggle(MiscPage, "Target Lock Sound", "Sound.TargetLockSound")
 U.makeButton(MiscPage, "Load Infinite Yield source", function()
@@ -2591,6 +3130,12 @@ function U.loadConfig(name, silent)
     if Settings.Misc.TPWalkEnabled then U.setTPWalk(true) else U.setTPWalk(false) end
     if Settings.Misc.InfJump then U.setInfJump(true) else U.setInfJump(false) end
     if Settings.Aim.HeadMover then U.startHeadMover() else U.stopHeadMover() end
+    -- Позиции
+    M.InvPanel.Position = UDim2.new(Settings.UI.InventoryX, 0, Settings.UI.InventoryY, 0)
+    M.Watermark.Position = UDim2.new(Settings.UI.WatermarkX, 0, Settings.UI.WatermarkY, 0)
+    if M.MobileAimBtn then
+        M.MobileAimBtn.Position = UDim2.new(Settings.Aim.MobileButtonX, 0, Settings.Aim.MobileButtonY, 0)
+    end
     if not silent then U.notify("Loaded config: " .. name, Theme.Good) end
     return true
 end
@@ -2699,8 +3244,11 @@ U.rebuildConfigList()
 --=====================================================================
 -- MENU PAGE
 --=====================================================================
-U.makeToggle(MenuPage, "Watermark", "UI.Watermark")
+U.makeToggle(MenuPage, "Watermark", "UI.Watermark", function(v)
+    M.Watermark.Visible = v
+end)
 U.makeToggle(MenuPage, "Notifications", "UI.Notifications")
+U.makeSlider(MenuPage, "Drag Hold Time", 0.3, 2, "UI.DragHoldTime")
 
 do
     local themeRow = U.makeRow(MenuPage, 32)
@@ -2767,6 +3315,15 @@ function U.applyTheme(name)
     local activeName
     for k, p in pairs(M.TabPages) do if p.Visible then activeName = k; break end end
     if activeName then U.selectTab(activeName) end
+    -- Watermark, InvPanel, MobileBtn
+    M.Watermark.BackgroundColor3 = Theme.Title
+    M.WatermarkText.TextColor3 = Theme.Text
+    M.InvPanel.BackgroundColor3 = Theme.Bg
+    InvHeader.BackgroundColor3 = Theme.Title
+    InvHeader.TextColor3 = Theme.Text
+    if M.MobileAimBtn then
+        M.MobileAimBtn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
+    end
 end
 
 function U.applyScale(name)
@@ -2788,7 +3345,6 @@ M.ScaleBtn.MouseButton1Click:Connect(function()
     U.applyScale(scaleOrder[idx])
 end)
 
--- Keybinds
 local kbHeader = Instance.new("TextLabel", MenuPage)
 kbHeader.Size = UDim2.new(1, -8, 0, 20)
 kbHeader.BackgroundTransparency = 1
@@ -2874,6 +3430,7 @@ function U.UNLOAD()
     if M.TPWalkConn then M.TPWalkConn:Disconnect(); M.TPWalkConn = nil end
     if M.AntiFlingConn then M.AntiFlingConn:Disconnect(); M.AntiFlingConn = nil end
     U.stopHeadMover()
+    U.stopFreecam()
     if M.WorldBackup then
         local o = M.OriginalLighting
         pcall(function()
@@ -2888,6 +3445,7 @@ function U.UNLOAD()
             Lighting.EnvironmentSpecularScale = o.EnvironmentSpecularScale
         end)
     end
+    if M.ColorCorrection then pcall(function() M.ColorCorrection:Destroy() end) end
     for m, d in pairs(M.ESPData) do U.destroyESPStruct(d) end
     M.ESPData = {}
     for inst, st in pairs(M.ItemDrawings) do
@@ -2918,50 +3476,14 @@ task.spawn(function()
 end)
 
 --=====================================================================
--- WATERMARK
+-- MOBILE BUTTON INIT
 --=====================================================================
-do
-    local wm = Instance.new("Frame", ScreenGui)
-    wm.Size = UDim2.new(0, 100, 0, 28)
-    wm.Position = UDim2.new(0, 15, 0, 15)
-    wm.BackgroundColor3 = Theme.Title
-    wm.BackgroundTransparency = 0.15
-    wm.BorderSizePixel = 0
-    wm.Visible = Settings.UI.Watermark
-    wm.AutomaticSize = Enum.AutomaticSize.X
-    Instance.new("UICorner", wm).CornerRadius = UDim.new(0, 8)
-    local ws = Instance.new("UIStroke", wm)
-    ws.Color = Theme.Accent; ws.Thickness = 1; ws.Transparency = 0.4
-    local wp = Instance.new("UIPadding", wm)
-    wp.PaddingLeft = UDim.new(0, 12); wp.PaddingRight = UDim.new(0, 12)
-    local wt = Instance.new("TextLabel", wm)
-    wt.Size = UDim2.new(0, 0, 1, 0)
-    wt.BackgroundTransparency = 1
-    wt.Text = "MixWare.lol"
-    wt.TextColor3 = Theme.Text
-    wt.Font = Enum.Font.GothamMedium
-    wt.TextSize = 12
-    wt.TextXAlignment = Enum.TextXAlignment.Left
-    wt.AutomaticSize = Enum.AutomaticSize.X
-    M.Watermark = wm
-    M.WatermarkText = wt
-
-    task.spawn(function()
-        while ScreenGui.Parent do
-            local fps = math.floor(1 / math.max(RunService.RenderStepped:Wait(), 1e-6))
-            local ping = 0
-            pcall(function()
-                ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-            end)
-            local time = os.date("%H:%M:%S")
-            local pc = #Players:GetPlayers()
-            wt.Text = string.format(
-                "  MixWare.lol v2.6   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
-                M.ActiveConfigName, time, fps, ping, pc)
-            task.wait(0.5)
-        end
-    end)
-end
+task.spawn(function()
+    task.wait(0.5)
+    if M.IsMobile and Settings.Aim.MobileButtonShow then
+        U.createMobileAimButton()
+    end
+end)
 
 --=====================================================================
 -- MAIN LOOP
@@ -2975,7 +3497,8 @@ U.addConn(RunService.RenderStepped:Connect(function()
 
     if Settings.Aim.Enabled then
         U.drawAimVisuals(M.CurrentTarget)
-        if U.isAimKeyDown() and M.CurrentTarget then U.setMouseLock(true)
+        if U.isAimKeyDown() and M.CurrentTarget and not M.FreecamActive then
+            U.setMouseLock(true)
         else U.setMouseLock(false) end
     else
         U.drawAimVisuals(nil)
@@ -3008,7 +3531,7 @@ U.addConn(UIS.InputBegan:Connect(function(input, gpe)
 end))
 
 --=====================================================================
--- Min / Close
+-- MIN / CLOSE
 --=====================================================================
 do
     local minimized = false
@@ -3032,4 +3555,4 @@ do
     end)
 end
 
-U.notify("MixWare.lol v2.6 loaded!", Theme.Accent)
+U.notify("MixWare.lol v2.8 loaded!" .. (M.IsMobile and " [MOBILE]" or ""), Theme.Accent)
