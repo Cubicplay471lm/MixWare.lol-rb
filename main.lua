@@ -60,6 +60,15 @@ M.WorldDrawings = {}
 M.Connections = {}
 M.ActiveConfigName = "none"
 M.IsMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+M.FramePlayers = {}
+M.FrameId = 0
+M.LastChamsUpdate = 0
+M.LastItemDraw = 0
+M.ChamsActive = false
+M.VisCache = {}
+M.BBoxCache = {}
+M.LightingEffects = {}
+M.LightFXNext = 0
 
 --=====================================================================
 -- THEME
@@ -183,12 +192,16 @@ end
 
 function U.getVisibleStateForModel(model)
     if not model then return false end
+    local cached = M.VisCache[model]
+    if cached and cached.frame == M.FrameId then return cached.visible end
     local head = model:FindFirstChild("Head")
     local torso = model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
         or model:FindFirstChild("Chest") or model:FindFirstChild("HumanoidRootPart")
-    if head and U.isVisibleFromCam(head, model) then return true end
-    if torso and U.isVisibleFromCam(torso, model) then return true end
-    return false
+    local visible = false
+    if head and U.isVisibleFromCam(head, model) then visible = true
+    elseif torso and U.isVisibleFromCam(torso, model) then visible = true end
+    M.VisCache[model] = {frame = M.FrameId, visible = visible}
+    return visible
 end
 
 function U.belongsToLocalPlayer(inst)
@@ -229,15 +242,23 @@ function U.getModelBounds(model)
         return head.CFrame.Position + Vector3.new(0, 0.5, 0),
                hrp.CFrame.Position - Vector3.new(0, 3, 0)
     end
-    local ok, cf, size = pcall(function()
-        local c, s = model:GetBoundingBox()
-        return c, s
-    end)
+    local ok, cf, size = U.getBoundingBoxCached(model)
     if ok and cf and size then
         return cf.Position + Vector3.new(0, size.Y/2, 0),
                cf.Position - Vector3.new(0, size.Y/2, 0)
     end
     return nil, nil
+end
+
+function U.getBoundingBoxCached(model)
+    local c = M.BBoxCache[model]
+    if c and c.frame == M.FrameId then return c.ok, c.mcf, c.size end
+    local ok, mcf, size = pcall(function()
+        local cf, sz = model:GetBoundingBox()
+        return cf, sz
+    end)
+    M.BBoxCache[model] = {frame = M.FrameId, ok = ok, mcf = mcf, size = size}
+    return ok, mcf, size
 end
 
 function U.colorToHex(c) if typeof(c) ~= "Color3" then return c end return "#"..c:ToHex() end
@@ -417,6 +438,26 @@ function U.createESPStruct()
     return d
 end
 
+function U.ensureESPData(model, full)
+    local d = M.ESPData[model]
+    if d then
+        if full and not d.box then
+            local hl = d.highlights
+            d = U.createESPStruct()
+            d.highlights = hl
+            M.ESPData[model] = d
+        end
+        return d
+    end
+    if full then
+        d = U.createESPStruct()
+    else
+        d = {corners = {}, box3d = {}, skeleton = {}, highlights = {}}
+    end
+    M.ESPData[model] = d
+    return d
+end
+
 function U.destroyESPStruct(d)
     pcall(function() d.box:Remove() end)
     for _, c in pairs(d.corners) do pcall(function() c:Remove() end) end
@@ -438,6 +479,12 @@ function U.destroyESPStruct(d)
 end
 
 function U.hideAllESP(d)
+    if not d.box then
+        if d.highlights then
+            for _, h in pairs(d.highlights) do h.Enabled = false end
+        end
+        return
+    end
     pcall(function() d.box.Visible = false end)
     for _, c in pairs(d.corners) do c.Visible = false end
     for _, l in pairs(d.box3d) do l.Visible = false end
@@ -457,17 +504,27 @@ function U.hideAllESP(d)
 end
 
 --=====================================================================
--- CHAMS (обновлённый — основной + руки + оружие)
+-- CHAMS (основной + руки + оружие)
 --=====================================================================
 function U.updateChamsForModel(model, isTarget)
-    local d = M.ESPData[model]
-    if not d then return end
     if not model or not model.Parent then return end
+    local mainOn = Settings.ESP.ChamsEnabled
+    local handOn = Settings.ESP.HandChamsEnabled
+    local weapOn = Settings.ESP.WeaponChamsEnabled
+    if not (mainOn or handOn or weapOn) then
+        local d = M.ESPData[model]
+        if d and d.highlights and next(d.highlights) then
+            for _, h in pairs(d.highlights) do pcall(function() h:Destroy() end) end
+            d.highlights = {}
+        end
+        return
+    end
 
+    local d = U.ensureESPData(model, false)
     local paintList = {}
 
     -- Основной Chams
-    if Settings.ESP.ChamsEnabled then
+    if mainOn then
         local mainColor
         if isTarget then mainColor = Settings.ESP.ChamsTargetColor
         elseif Settings.ESP.VisibleCheck and U.getVisibleStateForModel(model) then mainColor = Settings.ESP.VisibleColor
@@ -476,29 +533,47 @@ function U.updateChamsForModel(model, isTarget)
     end
 
     -- Hand Chams
-    if Settings.ESP.HandChamsEnabled then
+    if handOn then
         local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm","Left Arm","Right Arm"}
-        for _, name in ipairs(handNames) do
-            local part = model:FindFirstChild(name)
+        for i = 1, #handNames do
+            local part = model:FindFirstChild(handNames[i])
             if part and part:IsA("BasePart") then
-                paintList[part] = { color = Settings.ESP.HandChamsColor, transp = Settings.ESP.HandChamsTransp, key = "hand_" .. name }
+                paintList[part] = {
+                    color = Settings.ESP.HandChamsColor,
+                    transp = Settings.ESP.HandChamsTransp,
+                    key = "hand_" .. handNames[i],
+                }
             end
         end
     end
 
     -- Weapon Chams
-    if Settings.ESP.WeaponChamsEnabled then
+    if weapOn then
         for _, child in ipairs(model:GetChildren()) do
             if child:IsA("Tool") then
-                paintList[child] = { color = Settings.ESP.WeaponChamsColor, transp = Settings.ESP.WeaponChamsTransp, key = "weapon_" .. child.Name }
+                paintList[child] = {
+                    color = Settings.ESP.WeaponChamsColor,
+                    transp = Settings.ESP.WeaponChamsTransp,
+                    key = "weapon_" .. child.Name,
+                }
             end
         end
-        local hands = {model:FindFirstChild("RightHand"), model:FindFirstChild("LeftHand"), model:FindFirstChild("Right Arm"), model:FindFirstChild("Left Arm")}
-        for _, hand in ipairs(hands) do
+        local hands = {
+            model:FindFirstChild("RightHand"), model:FindFirstChild("LeftHand"),
+            model:FindFirstChild("Right Arm"), model:FindFirstChild("Left Arm"),
+        }
+        for i = 1, #hands do
+            local hand = hands[i]
             if hand then
-                for _, child in ipairs(hand:GetChildren()) do
+                local children = hand:GetChildren()
+                for j = 1, #children do
+                    local child = children[j]
                     if child:IsA("Tool") or child:IsA("Model") then
-                        paintList[child] = { color = Settings.ESP.WeaponChamsColor, transp = Settings.ESP.WeaponChamsTransp, key = "weapon_" .. child.Name }
+                        paintList[child] = {
+                            color = Settings.ESP.WeaponChamsColor,
+                            transp = Settings.ESP.WeaponChamsTransp,
+                            key = "weapon_" .. child.Name,
+                        }
                     end
                 end
             end
@@ -531,6 +606,14 @@ function U.updateChamsForModel(model, isTarget)
         if not activeKeys[key] then
             pcall(function() h:Destroy() end)
             d.highlights[key] = nil
+        end
+    end
+end
+
+function U.disableAllChams()
+    for _, d in pairs(M.ESPData) do
+        if d.highlights then
+            for _, h in pairs(d.highlights) do pcall(function() h.Enabled = false end) end
         end
     end
 end
@@ -621,17 +704,21 @@ function U.getWeaponName(model)
 end
 
 function U.drawESPForModel(model, plr)
-    local d = M.ESPData[model]
-    if not d then
-        d = U.createESPStruct()
-        M.ESPData[model] = d
-    end
+    local d = U.ensureESPData(model, true)
     local hum = model:FindFirstChildOfClass("Humanoid")
     if hum and hum.Health <= 0 then U.hideAllESP(d); return end
     local cf = U.getModelCFrame(model)
     if not cf then U.hideAllESP(d); return end
     local dist = (Camera.CFrame.Position - cf.Position).Magnitude
     if dist > Settings.ESP.MaxDistance then U.hideAllESP(d); return end
+
+    local feats = Settings.ESP
+    if not (feats.BoxEnabled or feats.CornerEnabled or feats.Box3DEnabled or feats.TracerEnabled
+        or feats.NameEnabled or feats.DistanceEnabled or feats.WeaponNameEnabled
+        or feats.SkeletonEnabled or feats.HealthBarEnabled or feats.NametagsEnabled or feats.ArrowsEnabled) then
+        U.hideAllESP(d)
+        return
+    end
 
     local alpha = U.getFadeAlpha(dist, Settings.ESP.MaxDistance)
     local visible = true
@@ -688,10 +775,7 @@ function U.drawESPForModel(model, plr)
     if Settings.ESP.Box3DEnabled then
         local edges = {{1,2},{3,4},{5,6},{7,8},{1,3},{2,4},{5,7},{6,8},{1,5},{2,6},{3,7},{4,8}}
         local corners = {}
-        local ok, mcf, size = pcall(function()
-            local c, s = model:GetBoundingBox()
-            return c, s
-        end)
+        local ok, mcf, size = U.getBoundingBoxCached(model)
         if ok and mcf and size then
             local hx, hy, hz = size.X/2, size.Y/2, size.Z/2
             for xi=-1,1,2 do for yi=-1,1,2 do for zi=-1,1,2 do
@@ -811,17 +895,10 @@ function U.drawESP()
     local now = tick()
     if now - M.LastESPUpdate < ESP_INTERVAL then return end
     M.LastESPUpdate = now
-    local seen = {}
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local ch, hrp = U.getCharacterForPlayer(plr)
-            if ch and hrp then seen[ch] = true; U.drawESPForModel(ch, plr) end
-        end
-    end
-    for m, d in pairs(M.ESPData) do
-        if not seen[m] or not m.Parent then
-            U.destroyESPStruct(d); M.ESPData[m] = nil
-        end
+    local targets = M.FramePlayers
+    for i = 1, #targets do
+        local t = targets[i]
+        U.drawESPForModel(t.ch, t.plr)
     end
 end
 
@@ -1381,6 +1458,10 @@ function U.drawItemESP()
     if tick() - M.ItemCache.lastRefresh > Settings.ItemESP.RefreshRate then
         U.refreshItemCache()
     end
+    if M.ItemCache.lastRefresh == 0 then return end
+    local nowItem = tick()
+    if nowItem - M.LastItemDraw < Settings.ItemESP.RefreshRate then return end
+    M.LastItemDraw = nowItem
     for inst, st in pairs(M.ItemDrawings) do
         if typeof(inst) == "Instance" and not inst.Parent then
             U.destroyItemStruct(st); M.ItemDrawings[inst] = nil
@@ -1452,15 +1533,36 @@ end
 
 function U.keepWorldValues()
     local w = Settings.World
+    local any = w.FullBright or w.NoFog or w.CustomTimeEnabled or w.CustomAmbientEnabled
+        or w.DisableSunRays or w.DisableAtmosphere or w.RemoveGrass
+        or (w.ColorCorrection and (w.FullBright or w.CustomAmbientEnabled))
+    if not any then
+        if M.ColorCorrection then
+            pcall(function() M.ColorCorrection:Destroy() end)
+            M.ColorCorrection = nil
+        end
+        return
+    end
+
+    if not M.LightFXNext or tick() >= M.LightFXNext then
+        M.LightFXNext = tick() + 1
+        local newList = {}
+        for _, obj in ipairs(Lighting:GetChildren()) do
+            if obj:IsA("Atmosphere") or obj:IsA("SunRaysEffect") or obj:IsA("BlurEffect") then
+                table.insert(newList, obj)
+            end
+        end
+        M.LightingEffects = newList
+    end
+    local eff = M.LightingEffects
+
+    if w.RemoveGrass then
+        pcall(function() Workspace.Terrain.Decoration = false end)
+    end
+
     if w.FullBright then
         U.backupLighting()
         if Lighting.Brightness ~= 3 then pcall(function() Lighting.Brightness = 3 end) end
-        if Lighting.Ambient ~= Color3.fromRGB(255,255,255) then
-            pcall(function()
-                Lighting.Ambient = Color3.fromRGB(255,255,255)
-                Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
-            end)
-        end
         if Lighting.GlobalShadows ~= false then pcall(function() Lighting.GlobalShadows = false end) end
         if Lighting.FogEnd ~= math.huge then
             pcall(function() Lighting.FogEnd = math.huge; Lighting.FogStart = 0 end)
@@ -1468,10 +1570,20 @@ function U.keepWorldValues()
         if Lighting.ClockTime < 11 or Lighting.ClockTime > 13 then
             pcall(function() Lighting.ClockTime = 12 end)
         end
-        for _, obj in ipairs(Lighting:GetChildren()) do
-            if obj:IsA("Atmosphere") then pcall(function() obj.Enabled = false end) end
-            if obj:IsA("SunRaysEffect") then pcall(function() obj.Enabled = false end) end
-            if obj:IsA("BlurEffect") then pcall(function() obj.Enabled = false end) end
+        -- Полный бритинг только если кастомный ambient выключен (иначе ambient перебьёт его)
+        if not w.CustomAmbientEnabled then
+            if Lighting.Ambient ~= Color3.fromRGB(255,255,255) then
+                pcall(function()
+                    Lighting.Ambient = Color3.fromRGB(255,255,255)
+                    Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+                end)
+            end
+        end
+        if w.CustomAmbientEnabled or w.DisableAtmosphere then
+            for i = 1, #eff do
+                local o = eff[i]
+                if o:IsA("Atmosphere") then pcall(function() o.Enabled = false end) end
+            end
         end
     end
 
@@ -1481,11 +1593,35 @@ function U.keepWorldValues()
     if w.CustomTimeEnabled and math.abs(Lighting.ClockTime - w.CustomTime) > 0.05 then
         pcall(function() Lighting.ClockTime = w.CustomTime end)
     end
-    if w.CustomAmbientEnabled and Lighting.Ambient ~= w.AmbientColor then
-        pcall(function()
-            Lighting.Ambient = w.AmbientColor
-            Lighting.OutdoorAmbient = w.AmbientColor
-        end)
+
+    if w.DisableAtmosphere and not w.CustomAmbientEnabled then
+        for i = 1, #eff do
+            local o = eff[i]
+            if o:IsA("Atmosphere") then pcall(function() o.Enabled = false end) end
+        end
+    end
+    if w.DisableSunRays then
+        for i = 1, #eff do
+            local o = eff[i]
+            if o:IsA("SunRaysEffect") then pcall(function() o.Enabled = false end) end
+        end
+    end
+
+    -- Custom Ambient — применяется последним, чтобы побеждать FullBright/Atmosphere
+    if w.CustomAmbientEnabled then
+        local amb = w.AmbientColor
+        if Lighting.Ambient ~= amb then pcall(function() Lighting.Ambient = amb end) end
+        if Lighting.OutdoorAmbient ~= amb then pcall(function() Lighting.OutdoorAmbient = amb end) end
+        -- Если игра использует Atmosphere, дублируем цвет в неё (иначе Lighting.Ambient игнорится)
+        for i = 1, #eff do
+            local o = eff[i]
+            if o:IsA("Atmosphere") and o.Enabled then
+                pcall(function()
+                    if o.Ambient ~= amb then o.Ambient = amb end
+                    if o.OutdoorAmbient ~= amb then o.OutdoorAmbient = amb end
+                end)
+            end
+        end
     end
 
     if w.ColorCorrection and (w.FullBright or w.CustomAmbientEnabled) then
@@ -3489,8 +3625,59 @@ end)
 -- MAIN LOOP
 --=====================================================================
 U.addConn(RunService.RenderStepped:Connect(function()
-    if Settings.ESP.Enabled then U.drawESP()
-    else for _, d in pairs(M.ESPData) do U.hideAllESP(d) end end
+    M.FrameId = M.FrameId + 1
+    local now = tick()
+    local espOn = Settings.ESP.Enabled
+    local chamOn = Settings.ESP.ChamsEnabled or Settings.ESP.HandChamsEnabled or Settings.ESP.WeaponChamsEnabled
+    local feats = Settings.ESP
+    local drawOn = espOn and (feats.BoxEnabled or feats.CornerEnabled or feats.Box3DEnabled
+        or feats.TracerEnabled or feats.NameEnabled or feats.DistanceEnabled or feats.WeaponNameEnabled
+        or feats.SkeletonEnabled or feats.HealthBarEnabled or feats.NametagsEnabled or feats.ArrowsEnabled)
+
+    -- Кэшируем список целей один раз за кадр (используется ESP/chams/cleanup)
+    local targets = M.FramePlayers
+    local n = 0
+    local seen = {}
+    if drawOn or chamOn then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                local ch, hrp = U.getCharacterForPlayer(plr)
+                if ch and hrp then
+                    seen[ch] = true
+                    n = n + 1
+                    targets[n] = {plr = plr, ch = ch, hrp = hrp}
+                end
+            end
+        end
+    end
+    for i = n + 1, #targets do targets[i] = nil end
+
+    if drawOn then
+        U.drawESP()
+    end
+
+    if chamOn and now - M.LastChamsUpdate >= ESP_INTERVAL then
+        M.LastChamsUpdate = now
+        M.ChamsActive = true
+        for i = 1, #targets do
+            local t = targets[i]
+            U.updateChamsForModel(t.ch, M.CurrentTarget == t.plr)
+        end
+    elseif not chamOn and M.ChamsActive then
+        M.ChamsActive = false
+        U.disableAllChams()
+    end
+
+    if drawOn or chamOn then
+        for m, d in pairs(M.ESPData) do
+            if not seen[m] or not m.Parent then
+                U.destroyESPStruct(d)
+                M.ESPData[m] = nil
+            end
+        end
+    elseif next(M.ESPData) then
+        for m, d in pairs(M.ESPData) do U.hideAllESP(d) end
+    end
 
     U.drawCrosshair()
     U.drawTargetLine()
@@ -3514,6 +3701,7 @@ U.addConn(RunService.RenderStepped:Connect(function()
 end))
 
 U.addConn(RunService.Heartbeat:Connect(function()
+    M.FrameId = M.FrameId + 1
     U.heartbeatAimbot()
 end))
 
