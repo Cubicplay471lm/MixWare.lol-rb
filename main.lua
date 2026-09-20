@@ -1,18 +1,14 @@
 --[[
-    MixWare.lol v2.8
+    MixWare.lol v2.8.5
     Combat → AimBot | Trigger
     Visuals → Enemies | Items | Inventory | World | Crosshair
     Misc → Misc | Config | Menu
 
-    Новое в 2.8:
-      - Мобильная кнопка аима (toggle, зелёная/красная)
-      - Долгое удержание 0.7с для перетаскивания кнопки/панелей/ватермарка
-      - Сохранение позиций в конфиг
-      - HSV ColorPicker с яркостью
-      - Hand/Weapon Chams
-      - Усиленный FullBright + ColorCorrection
-      - Мгновенный Custom FOV
-      - Freecam на K
+    Новое в 2.8.5:
+      - FOV Fill: градиент от центра к границе круга
+      - Target Pulse: пульсация всего ESP цели аима
+      - Behind-Wall Pulse удалён
+      - Hand/Weapon Chams: перенесены в World, работают на LocalPlayer через Material+Color
 --]]
 
 --=====================================================================
@@ -42,7 +38,6 @@ local HttpService = cloneref(game:GetService("HttpService"))
 local Stats = cloneref(game:GetService("Stats"))
 local SoundService = cloneref(game:GetService("SoundService"))
 local VirtualInputManager = cloneref(game:GetService("VirtualInputManager"))
-local TweenService = cloneref(game:GetService("TweenService"))
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -56,19 +51,9 @@ U = M.U
 M.ESPData = {}
 M.AllDrawings = {}
 M.ItemDrawings = {}
-M.WorldDrawings = {}
 M.Connections = {}
 M.ActiveConfigName = "none"
 M.IsMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
-M.FramePlayers = {}
-M.FrameId = 0
-M.LastChamsUpdate = 0
-M.LastItemDraw = 0
-M.ChamsActive = false
-M.VisCache = {}
-M.BBoxCache = {}
-M.LightingEffects = {}
-M.LightFXNext = 0
 
 --=====================================================================
 -- THEME
@@ -95,15 +80,12 @@ local Settings = {
     ESP = {
         Enabled=false, ChamsEnabled=false, ChamsColor=Color3.fromRGB(160,90,255), ChamsTransp=0.5,
         ChamsTargetColor=Color3.fromRGB(255,60,130),
-        HandChamsEnabled=false, HandChamsColor=Color3.fromRGB(255,150,200), HandChamsTransp=0.3,
-        WeaponChamsEnabled=false, WeaponChamsColor=Color3.fromRGB(150,255,150), WeaponChamsTransp=0.3,
         BoxEnabled=false, BoxColor=Color3.fromRGB(200,170,255), BoxThickness=1,
         CornerEnabled=false, CornerColor=Color3.fromRGB(180,100,255), CornerLength=10, CornerThickness=1,
         Box3DEnabled=false, Box3DColor=Color3.fromRGB(220,120,255),
         TracerEnabled=false, TracerColor=Color3.fromRGB(200,100,255), TracerOrigin="Bottom",
         NameEnabled=true, NameShadow=false, DistanceEnabled=true, MaxDistance=1000,
         VisibleCheck=false, VisibleColor=Color3.fromRGB(200,130,255),
-        PulseEnabled=false, PulseSpeed=1.5, PulseMin=0.35, PulseMax=0.85,
         SkeletonEnabled=false, SkeletonColor=Color3.fromRGB(200,130,255), SkeletonThickness=1,
         HealthBarEnabled=false, HealthBarWidth=4, HealthBarOffset=6,
         NametagsEnabled=false, NametagsShowHP=true, NametagsShowDist=true,
@@ -114,7 +96,17 @@ local Settings = {
     Crosshair = {Enabled=false,Style="Cross",Color=Color3.fromRGB(255,255,255),OutlineColor=Color3.fromRGB(0,0,0),Gap=4,Length=8,Thickness=1,Dot=true,DotSize=2,CircleRadius=12,Outline=true,Rainbow=false},
     ItemESP = {Enabled=false,Color=Color3.fromRGB(220,180,100),MaxDistance=500,TextEnabled=true,RefreshRate=0.2,SelectedItems={}},
     WorldESP = {Enabled=false,Color=Color3.fromRGB(120,220,200),MaxDistance=500,TextEnabled=true},
-    World = {FullBright=false,NoFog=false,CustomTimeEnabled=false,CustomTime=14,CustomAmbientEnabled=false,AmbientColor=Color3.fromRGB(255,255,255),CameraFOVEnabled=false,CameraFOV=70,DisableSunRays=false,DisableAtmosphere=false,RemoveGrass=false,ColorCorrection=true},
+    World = {
+        FullBright=false, NoFog=false, CustomTimeEnabled=false, CustomTime=14,
+        CustomAmbientEnabled=false, AmbientColor=Color3.fromRGB(255,255,255),
+        CameraFOVEnabled=false, CameraFOV=70,
+        DisableSunRays=false, DisableAtmosphere=false, RemoveGrass=false, ColorCorrection=true,
+        -- Hand/Weapon Chams (для LocalPlayer, через Material+Color)
+        HandChamsEnabled=false, HandChamsMaterial="Neon",
+        HandChamsColor=Color3.fromRGB(255,100,200), HandChamsTransparency=0.2,
+        WeaponChamsEnabled=false, WeaponChamsMaterial="Neon",
+        WeaponChamsColor=Color3.fromRGB(150,255,150), WeaponChamsTransparency=0.2,
+    },
     InvESP = {Enabled=false,Transparency=0.35,ShowLocal=true,FontSize=14,ShowTools=true,ShowHealth=true,RefreshInterval=0.25},
     Aim = {
         Enabled=false, FOV=120, ShowFOV=true, Instant=false, Smoothness=0.15,
@@ -126,10 +118,18 @@ local Settings = {
         TargetLineThickness=1, TargetLineTransparency=0.2, TargetLineOnlyAiming=true,
         TargetLineStyle="Solid", TargetLineDashCount=8,
         GroundOnly=false, DebugVisuals=false,
-        -- Mobile
         MobileButtonShow=true,
         MobileButtonX=0.82, MobileButtonY=0.75,
         MobileButtonLocked=false,
+        -- FOV Fill
+        FOVFillEnabled=false,
+        FOVFillCenterColor=Color3.fromRGB(255,50,50),
+        FOVFillTransparency=0.85,
+        -- Target Pulse
+        TargetPulseEnabled=false,
+        TargetPulseSpeed=2.0,
+        TargetPulseMin=0.3,
+        TargetPulseMax=1.0,
     },
     Trigger = {Enabled=false,Delay=0.05,TeamCheck=true,WallCheck=false,OnlyAimKey=true},
     Misc = {
@@ -165,7 +165,6 @@ end
 function U.getFOVOrigin() return Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2) end
 
 function U.isAimKeyDown()
-    -- Мобильная кнопка
     if M.IsMobile and Settings.Aim.MobileButtonShow and M.MobileButtonActive then
         return true
     end
@@ -192,16 +191,12 @@ end
 
 function U.getVisibleStateForModel(model)
     if not model then return false end
-    local cached = M.VisCache[model]
-    if cached and cached.frame == M.FrameId then return cached.visible end
     local head = model:FindFirstChild("Head")
     local torso = model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
         or model:FindFirstChild("Chest") or model:FindFirstChild("HumanoidRootPart")
-    local visible = false
-    if head and U.isVisibleFromCam(head, model) then visible = true
-    elseif torso and U.isVisibleFromCam(torso, model) then visible = true end
-    M.VisCache[model] = {frame = M.FrameId, visible = visible}
-    return visible
+    if head and U.isVisibleFromCam(head, model) then return true end
+    if torso and U.isVisibleFromCam(torso, model) then return true end
+    return false
 end
 
 function U.belongsToLocalPlayer(inst)
@@ -242,23 +237,15 @@ function U.getModelBounds(model)
         return head.CFrame.Position + Vector3.new(0, 0.5, 0),
                hrp.CFrame.Position - Vector3.new(0, 3, 0)
     end
-    local ok, cf, size = U.getBoundingBoxCached(model)
+    local ok, cf, size = pcall(function()
+        local c, s = model:GetBoundingBox()
+        return c, s
+    end)
     if ok and cf and size then
         return cf.Position + Vector3.new(0, size.Y/2, 0),
                cf.Position - Vector3.new(0, size.Y/2, 0)
     end
     return nil, nil
-end
-
-function U.getBoundingBoxCached(model)
-    local c = M.BBoxCache[model]
-    if c and c.frame == M.FrameId then return c.ok, c.mcf, c.size end
-    local ok, mcf, size = pcall(function()
-        local cf, sz = model:GetBoundingBox()
-        return cf, sz
-    end)
-    M.BBoxCache[model] = {frame = M.FrameId, ok = ok, mcf = mcf, size = size}
-    return ok, mcf, size
 end
 
 function U.colorToHex(c) if typeof(c) ~= "Color3" then return c end return "#"..c:ToHex() end
@@ -438,26 +425,6 @@ function U.createESPStruct()
     return d
 end
 
-function U.ensureESPData(model, full)
-    local d = M.ESPData[model]
-    if d then
-        if full and not d.box then
-            local hl = d.highlights
-            d = U.createESPStruct()
-            d.highlights = hl
-            M.ESPData[model] = d
-        end
-        return d
-    end
-    if full then
-        d = U.createESPStruct()
-    else
-        d = {corners = {}, box3d = {}, skeleton = {}, highlights = {}}
-    end
-    M.ESPData[model] = d
-    return d
-end
-
 function U.destroyESPStruct(d)
     pcall(function() d.box:Remove() end)
     for _, c in pairs(d.corners) do pcall(function() c:Remove() end) end
@@ -479,143 +446,197 @@ function U.destroyESPStruct(d)
 end
 
 function U.hideAllESP(d)
-    if not d.box then
-        if d.highlights then
-            for _, h in pairs(d.highlights) do h.Enabled = false end
-        end
-        return
-    end
     pcall(function() d.box.Visible = false end)
     for _, c in pairs(d.corners) do c.Visible = false end
     for _, l in pairs(d.box3d) do l.Visible = false end
     for _, l in pairs(d.skeleton) do l.Visible = false end
-    d.tracer.Visible = false
-    d.name.Visible = false
-    d.dist.Visible = false
-    d.nameShadow.Visible = false
-    d.hpBg.Visible = false
-    d.hpFill.Visible = false
-    d.nametag.Visible = false
-    d.arrow.Visible = false
-    d.weapon.Visible = false
-    if d.highlights then
-        for _, h in pairs(d.highlights) do h.Enabled = false end
-    end
+    if d.tracer then d.tracer.Visible = false end
+    if d.name then d.name.Visible = false end
+    if d.dist then d.dist.Visible = false end
+    if d.nameShadow then d.nameShadow.Visible = false end
+    if d.hpBg then d.hpBg.Visible = false end
+    if d.hpFill then d.hpFill.Visible = false end
+    if d.nametag then d.nametag.Visible = false end
+    if d.arrow then d.arrow.Visible = false end
+    if d.weapon then d.weapon.Visible = false end
 end
 
 --=====================================================================
--- CHAMS (основной + руки + оружие)
+-- CHAMS (только основной, для врагов)
 --=====================================================================
 function U.updateChamsForModel(model, isTarget)
     if not model or not model.Parent then return end
-    local mainOn = Settings.ESP.ChamsEnabled
-    local handOn = Settings.ESP.HandChamsEnabled
-    local weapOn = Settings.ESP.WeaponChamsEnabled
-    if not (mainOn or handOn or weapOn) then
-        local d = M.ESPData[model]
-        if d and d.highlights and next(d.highlights) then
-            for _, h in pairs(d.highlights) do pcall(function() h:Destroy() end) end
-            d.highlights = {}
+    local d = M.ESPData[model]
+    if not d then
+        d = { highlights = {} }
+        M.ESPData[model] = d
+    end
+
+    if not Settings.ESP.ChamsEnabled then
+        if d.highlights and d.highlights.main then
+            d.highlights.main.Enabled = false
         end
         return
     end
 
-    local d = U.ensureESPData(model, false)
-    local paintList = {}
+    local color
+    if isTarget then color = Settings.ESP.ChamsTargetColor
+    elseif Settings.ESP.VisibleCheck and U.getVisibleStateForModel(model) then color = Settings.ESP.VisibleColor
+    else color = Settings.ESP.ChamsColor end
 
-    -- Основной Chams
-    if mainOn then
-        local mainColor
-        if isTarget then mainColor = Settings.ESP.ChamsTargetColor
-        elseif Settings.ESP.VisibleCheck and U.getVisibleStateForModel(model) then mainColor = Settings.ESP.VisibleColor
-        else mainColor = Settings.ESP.ChamsColor end
-        paintList[model] = { color = mainColor, transp = Settings.ESP.ChamsTransp, key = "main" }
+    local h = d.highlights.main
+    if not h or not h.Parent then
+        h = Instance.new("Highlight")
+        h.Name = "MixWareChams_main"
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.Adornee = model
+        h.Parent = model
+        d.highlights.main = h
+    end
+    h.FillColor = color
+    h.OutlineColor = color
+    h.FillTransparency = Settings.ESP.ChamsTransp
+    h.OutlineTransparency = Settings.ESP.ChamsTransp * 0.5
+    h.Enabled = true
+end
+
+function U.updateChamsAll()
+    if not Settings.ESP.ChamsEnabled then return end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local ch = plr.Character
+            if ch then
+                U.updateChamsForModel(ch, plr == M.CurrentTarget)
+            end
+        end
+    end
+end
+
+--=====================================================================
+-- HAND / WEAPON CHAMS для LocalPlayer (Material + Color)
+--=====================================================================
+M.LocalMatOriginal = {}
+
+function U.clearLocalMaterial()
+    for part, orig in pairs(M.LocalMatOriginal) do
+        if part and part.Parent then
+            pcall(function()
+                part.Material = orig.material
+                part.Color = orig.color
+                part.Transparency = orig.transparency
+            end)
+        end
+    end
+    M.LocalMatOriginal = {}
+end
+
+function U.applyLocalMaterial()
+    local w = Settings.World
+    local handsOn = w.HandChamsEnabled
+    local weaponOn = w.WeaponChamsEnabled
+    
+    if not handsOn and not weaponOn then
+        U.clearLocalMaterial()
+        return
     end
 
-    -- Hand Chams
-    if handOn then
-        local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm","Left Arm","Right Arm"}
-        for i = 1, #handNames do
-            local part = model:FindFirstChild(handNames[i])
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local parts = {}
+
+    -- Hands
+    if handsOn then
+        local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm","Left Arm","Right Arm","LeftUpperArm","RightUpperArm"}
+        for _, name in ipairs(handNames) do
+            local part = char:FindFirstChild(name)
             if part and part:IsA("BasePart") then
-                paintList[part] = {
-                    color = Settings.ESP.HandChamsColor,
-                    transp = Settings.ESP.HandChamsTransp,
-                    key = "hand_" .. handNames[i],
-                }
+                table.insert(parts, {part = part, kind = "hands"})
             end
         end
     end
 
-    -- Weapon Chams
-    if weapOn then
-        for _, child in ipairs(model:GetChildren()) do
+    -- Weapons
+    if weaponOn then
+        for _, child in ipairs(char:GetChildren()) do
             if child:IsA("Tool") then
-                paintList[child] = {
-                    color = Settings.ESP.WeaponChamsColor,
-                    transp = Settings.ESP.WeaponChamsTransp,
-                    key = "weapon_" .. child.Name,
-                }
+                for _, d in ipairs(child:GetDescendants()) do
+                    if d:IsA("BasePart") then
+                        table.insert(parts, {part = d, kind = "weapon"})
+                    end
+                end
             end
-        end
-        local hands = {
-            model:FindFirstChild("RightHand"), model:FindFirstChild("LeftHand"),
-            model:FindFirstChild("Right Arm"), model:FindFirstChild("Left Arm"),
-        }
-        for i = 1, #hands do
-            local hand = hands[i]
-            if hand then
-                local children = hand:GetChildren()
-                for j = 1, #children do
-                    local child = children[j]
-                    if child:IsA("Tool") or child:IsA("Model") then
-                        paintList[child] = {
-                            color = Settings.ESP.WeaponChamsColor,
-                            transp = Settings.ESP.WeaponChamsTransp,
-                            key = "weapon_" .. child.Name,
-                        }
+            if child:IsA("Model") then
+                local rh = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+                if rh and child:IsDescendantOf(rh) then
+                    for _, d in ipairs(child:GetDescendants()) do
+                        if d:IsA("BasePart") then
+                            table.insert(parts, {part = d, kind = "weapon"})
+                        end
                     end
                 end
             end
         end
     end
 
-    if not d.highlights then d.highlights = {} end
-    local activeKeys = {}
-
-    for obj, info in pairs(paintList) do
-        activeKeys[info.key] = true
-        local h = d.highlights[info.key]
-        if not h or not h.Parent then
-            h = Instance.new("Highlight")
-            h.Name = "MixWareChams_" .. info.key
-            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            h.Adornee = obj
-            h.Parent = obj
-            d.highlights[info.key] = h
+    -- Применяем
+    for _, entry in ipairs(parts) do
+        local part = entry.part
+        if part and part.Parent then
+            if not M.LocalMatOriginal[part] then
+                M.LocalMatOriginal[part] = {
+                    material = part.Material,
+                    color = part.Color,
+                    transparency = part.Transparency,
+                }
+            end
+            local mat, col, tr
+            if entry.kind == "hands" then
+                mat = Enum.Material[w.HandChamsMaterial] or Enum.Material.Neon
+                col = w.HandChamsColor
+                tr = w.HandChamsTransparency
+            else
+                mat = Enum.Material[w.WeaponChamsMaterial] or Enum.Material.Neon
+                col = w.WeaponChamsColor
+                tr = w.WeaponChamsTransparency
+            end
+            pcall(function()
+                part.Material = mat
+                part.Color = col
+                part.Transparency = tr
+            end)
         end
-        h.Adornee = obj
-        h.FillColor = info.color
-        h.OutlineColor = info.color
-        h.FillTransparency = info.transp
-        h.OutlineTransparency = info.transp * 0.5
-        h.Enabled = true
     end
 
-    for key, h in pairs(d.highlights) do
-        if not activeKeys[key] then
-            pcall(function() h:Destroy() end)
-            d.highlights[key] = nil
+    -- Удаляем неактуальные
+    for part, _ in pairs(M.LocalMatOriginal) do
+        local stillValid = false
+        for _, entry in ipairs(parts) do
+            if entry.part == part then stillValid = true; break end
+        end
+        if not stillValid or not part.Parent then
+            if part.Parent then
+                pcall(function()
+                    part.Material = M.LocalMatOriginal[part].material
+                    part.Color = M.LocalMatOriginal[part].color
+                    part.Transparency = M.LocalMatOriginal[part].transparency
+                end)
+            end
+            M.LocalMatOriginal[part] = nil
         end
     end
 end
 
-function U.disableAllChams()
-    for _, d in pairs(M.ESPData) do
-        if d.highlights then
-            for _, h in pairs(d.highlights) do pcall(function() h.Enabled = false end) end
-        end
-    end
+--=====================================================================
+-- TARGET PULSE (пульсация цели аима)
+--=====================================================================
+function U.getTargetPulseAlpha()
+    if not Settings.Aim.TargetPulseEnabled then return 1 end
+    local s = Settings.Aim.TargetPulseSpeed
+    local minA = Settings.Aim.TargetPulseMin
+    local maxA = Settings.Aim.TargetPulseMax
+    local t = (math.sin(tick() * s * math.pi * 2) + 1) * 0.5
+    return minA + (maxA - minA) * t
 end
 
 --=====================================================================
@@ -682,15 +703,6 @@ function U.getFadeAlpha(dist, maxDist)
     return 1 - ((dist - fs) / (maxDist - fs))
 end
 
-function U.getPulseAlpha(now)
-    if not Settings.ESP.PulseEnabled then return 1 end
-    local s = Settings.ESP.PulseSpeed
-    local minA = Settings.ESP.PulseMin
-    local maxA = Settings.ESP.PulseMax
-    local t = (math.sin(now * s * math.pi * 2) + 1) * 0.5
-    return minA + (maxA - minA) * t
-end
-
 function U.getWeaponName(model)
     local tool = model:FindFirstChildWhichIsA("Tool")
     if tool then return tool.Name end
@@ -704,7 +716,11 @@ function U.getWeaponName(model)
 end
 
 function U.drawESPForModel(model, plr)
-    local d = U.ensureESPData(model, true)
+    local d = M.ESPData[model]
+    if not d then
+        d = U.createESPStruct()
+        M.ESPData[model] = d
+    end
     local hum = model:FindFirstChildOfClass("Humanoid")
     if hum and hum.Health <= 0 then U.hideAllESP(d); return end
     local cf = U.getModelCFrame(model)
@@ -712,20 +728,16 @@ function U.drawESPForModel(model, plr)
     local dist = (Camera.CFrame.Position - cf.Position).Magnitude
     if dist > Settings.ESP.MaxDistance then U.hideAllESP(d); return end
 
-    local feats = Settings.ESP
-    if not (feats.BoxEnabled or feats.CornerEnabled or feats.Box3DEnabled or feats.TracerEnabled
-        or feats.NameEnabled or feats.DistanceEnabled or feats.WeaponNameEnabled
-        or feats.SkeletonEnabled or feats.HealthBarEnabled or feats.NametagsEnabled or feats.ArrowsEnabled) then
-        U.hideAllESP(d)
-        return
-    end
-
     local alpha = U.getFadeAlpha(dist, Settings.ESP.MaxDistance)
+    
+    -- Target Pulse: пульсация цели аима
+    local isTarget = (plr == M.CurrentTarget)
+    if isTarget and Settings.Aim.TargetPulseEnabled then
+        alpha = alpha * U.getTargetPulseAlpha()
+    end
+    
     local visible = true
     if Settings.ESP.VisibleCheck then visible = U.getVisibleStateForModel(model) end
-    if Settings.ESP.PulseEnabled and Settings.ESP.VisibleCheck and not visible then
-        alpha = alpha * U.getPulseAlpha(tick())
-    end
     local override = nil
     if Settings.ESP.VisibleCheck and visible then override = Settings.ESP.VisibleColor end
 
@@ -775,7 +787,10 @@ function U.drawESPForModel(model, plr)
     if Settings.ESP.Box3DEnabled then
         local edges = {{1,2},{3,4},{5,6},{7,8},{1,3},{2,4},{5,7},{6,8},{1,5},{2,6},{3,7},{4,8}}
         local corners = {}
-        local ok, mcf, size = U.getBoundingBoxCached(model)
+        local ok, mcf, size = pcall(function()
+            local c, s = model:GetBoundingBox()
+            return c, s
+        end)
         if ok and mcf and size then
             local hx, hy, hz = size.X/2, size.Y/2, size.Z/2
             for xi=-1,1,2 do for yi=-1,1,2 do for zi=-1,1,2 do
@@ -895,10 +910,17 @@ function U.drawESP()
     local now = tick()
     if now - M.LastESPUpdate < ESP_INTERVAL then return end
     M.LastESPUpdate = now
-    local targets = M.FramePlayers
-    for i = 1, #targets do
-        local t = targets[i]
-        U.drawESPForModel(t.ch, t.plr)
+    local seen = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local ch, hrp = U.getCharacterForPlayer(plr)
+            if ch and hrp then seen[ch] = true; U.drawESPForModel(ch, plr) end
+        end
+    end
+    for m, d in pairs(M.ESPData) do
+        if not seen[m] or not m.Parent then
+            U.destroyESPStruct(d); M.ESPData[m] = nil
+        end
     end
 end
 
@@ -1032,6 +1054,58 @@ M.FovCircle.Filled = false
 M.FovCircle.Transparency = 1
 M.FovCircle.Color = Theme.Accent
 M.FovCircle.Visible = false
+
+-- FOV Fill (градиент из кругов)
+M.FovFillCircles = {}
+M.FovFillMaxCount = 8
+M.FovFillIndex = 0
+
+function U.initFovFill()
+    for i = 1, M.FovFillMaxCount do
+        local c = U.newDrawing("Circle")
+        c.Thickness = 1
+        c.NumSides = 64
+        c.Filled = true
+        c.Transparency = 1
+        c.Visible = false
+        M.FovFillCircles[i] = c
+    end
+end
+U.initFovFill()
+
+function U.hideFovFill()
+    for i = 1, #M.FovFillCircles do
+        M.FovFillCircles[i].Visible = false
+    end
+end
+
+function U.drawFovFill()
+    if not Settings.Aim.FOVFillEnabled or not Settings.Aim.Enabled or not Settings.Aim.ShowFOV then
+        U.hideFovFill(); return
+    end
+    local center = U.getFOVOrigin()
+    local radius = Settings.Aim.FOV
+    local centerColor = Settings.Aim.FOVFillCenterColor
+    local edgeColor = Settings.Aim.FOVColor or Settings.Aim.ShowFOV and Theme.Accent or Theme.Accent
+    -- Используем цвет FOV Circle (граница)
+    edgeColor = M.FovCircle.Color or Theme.Accent
+
+    local totalTransp = Settings.Aim.FOVFillTransparency
+    local count = M.FovFillMaxCount
+
+    for i = 1, count do
+        local c = M.FovFillCircles[i]
+        local t = i / count  -- 0..1, 1 = граница
+        -- Радиус: от 0 до полного (слоями)
+        c.Position = center
+        c.Radius = radius * t
+        c.Color = centerColor:Lerp(edgeColor, t)
+        -- Прозрачность: в центре прозрачнее, на границе плотнее
+        -- totalTransp — общая прозрачность заливки, ближе к 1 = прозрачнее
+        c.Transparency = 1 - (1 - totalTransp) * t
+        c.Visible = true
+    end
+end
 
 M.TargetLinePool = {}
 M.TargetLineSingle = U.newDrawing("Line")
@@ -1205,19 +1279,26 @@ end
 
 M.MouseLocked = false
 function U.setMouseLock(state)
-    if state == M.MouseLocked then return end
-    M.MouseLocked = state
     pcall(function()
-        UIS.MouseBehavior = state and Enum.MouseBehavior.LockCenter or Enum.MouseBehavior.Default
+        if state then
+            UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+        else
+            UIS.MouseBehavior = Enum.MouseBehavior.Default
+        end
     end)
+    M.MouseLocked = state
 end
 
 function U.drawAimVisuals(target)
     if Settings.Aim.ShowFOV and Settings.Aim.Enabled and not M.FreecamActive then
+        local edgeColor = Settings.ESP.ChamsColor or Theme.Accent
+        -- Цвет границы — берём отдельно (можно изменить в UI на цвет Chams)
+        if Settings.Aim.FOVColor then edgeColor = Settings.Aim.FOVColor end
         M.FovCircle.Position = U.getFOVOrigin()
         M.FovCircle.Radius = Settings.Aim.FOV
         M.FovCircle.Visible = true
     else M.FovCircle.Visible = false end
+    U.drawFovFill()
 
     if target and Settings.Aim.Enabled then
         local model, part = U.resolveAimTarget(target)
@@ -1458,10 +1539,6 @@ function U.drawItemESP()
     if tick() - M.ItemCache.lastRefresh > Settings.ItemESP.RefreshRate then
         U.refreshItemCache()
     end
-    if M.ItemCache.lastRefresh == 0 then return end
-    local nowItem = tick()
-    if nowItem - M.LastItemDraw < Settings.ItemESP.RefreshRate then return end
-    M.LastItemDraw = nowItem
     for inst, st in pairs(M.ItemDrawings) do
         if typeof(inst) == "Instance" and not inst.Parent then
             U.destroyItemStruct(st); M.ItemDrawings[inst] = nil
@@ -1533,44 +1610,8 @@ end
 
 function U.keepWorldValues()
     local w = Settings.World
-    local any = w.FullBright or w.NoFog or w.CustomTimeEnabled or w.CustomAmbientEnabled
-        or w.DisableSunRays or w.DisableAtmosphere or w.RemoveGrass
-        or (w.ColorCorrection and (w.FullBright or w.CustomAmbientEnabled))
-    if not any then
-        if M.ColorCorrection then
-            pcall(function() M.ColorCorrection:Destroy() end)
-            M.ColorCorrection = nil
-        end
-        return
-    end
-
-    if not M.LightFXNext or tick() >= M.LightFXNext then
-        M.LightFXNext = tick() + 1
-        local newList = {}
-        for _, obj in ipairs(Lighting:GetChildren()) do
-            if obj:IsA("Atmosphere") or obj:IsA("SunRaysEffect") or obj:IsA("BlurEffect") then
-                table.insert(newList, obj)
-            end
-        end
-        M.LightingEffects = newList
-    end
-    local eff = M.LightingEffects
-
-    if w.RemoveGrass then
-        pcall(function() Workspace.Terrain.Decoration = false end)
-    end
-
     if w.FullBright then
         U.backupLighting()
-        if Lighting.Brightness ~= 3 then pcall(function() Lighting.Brightness = 3 end) end
-        if Lighting.GlobalShadows ~= false then pcall(function() Lighting.GlobalShadows = false end) end
-        if Lighting.FogEnd ~= math.huge then
-            pcall(function() Lighting.FogEnd = math.huge; Lighting.FogStart = 0 end)
-        end
-        if Lighting.ClockTime < 11 or Lighting.ClockTime > 13 then
-            pcall(function() Lighting.ClockTime = 12 end)
-        end
-        -- Полный бритинг только если кастомный ambient выключен (иначе ambient перебьёт его)
         if not w.CustomAmbientEnabled then
             if Lighting.Ambient ~= Color3.fromRGB(255,255,255) then
                 pcall(function()
@@ -1579,11 +1620,18 @@ function U.keepWorldValues()
                 end)
             end
         end
-        if w.CustomAmbientEnabled or w.DisableAtmosphere then
-            for i = 1, #eff do
-                local o = eff[i]
-                if o:IsA("Atmosphere") then pcall(function() o.Enabled = false end) end
-            end
+        if Lighting.Brightness ~= 3 then pcall(function() Lighting.Brightness = 3 end) end
+        if Lighting.GlobalShadows ~= false then pcall(function() Lighting.GlobalShadows = false end) end
+        if Lighting.FogEnd ~= math.huge then
+            pcall(function() Lighting.FogEnd = math.huge; Lighting.FogStart = 0 end)
+        end
+        if Lighting.ClockTime < 11 or Lighting.ClockTime > 13 then
+            pcall(function() Lighting.ClockTime = 12 end)
+        end
+        for _, obj in ipairs(Lighting:GetChildren()) do
+            if obj:IsA("Atmosphere") then pcall(function() obj.Enabled = false end) end
+            if obj:IsA("SunRaysEffect") then pcall(function() obj.Enabled = false end) end
+            if obj:IsA("BlurEffect") then pcall(function() obj.Enabled = false end) end
         end
     end
 
@@ -1593,35 +1641,11 @@ function U.keepWorldValues()
     if w.CustomTimeEnabled and math.abs(Lighting.ClockTime - w.CustomTime) > 0.05 then
         pcall(function() Lighting.ClockTime = w.CustomTime end)
     end
-
-    if w.DisableAtmosphere and not w.CustomAmbientEnabled then
-        for i = 1, #eff do
-            local o = eff[i]
-            if o:IsA("Atmosphere") then pcall(function() o.Enabled = false end) end
-        end
-    end
-    if w.DisableSunRays then
-        for i = 1, #eff do
-            local o = eff[i]
-            if o:IsA("SunRaysEffect") then pcall(function() o.Enabled = false end) end
-        end
-    end
-
-    -- Custom Ambient — применяется последним, чтобы побеждать FullBright/Atmosphere
     if w.CustomAmbientEnabled then
-        local amb = w.AmbientColor
-        if Lighting.Ambient ~= amb then pcall(function() Lighting.Ambient = amb end) end
-        if Lighting.OutdoorAmbient ~= amb then pcall(function() Lighting.OutdoorAmbient = amb end) end
-        -- Если игра использует Atmosphere, дублируем цвет в неё (иначе Lighting.Ambient игнорится)
-        for i = 1, #eff do
-            local o = eff[i]
-            if o:IsA("Atmosphere") and o.Enabled then
-                pcall(function()
-                    if o.Ambient ~= amb then o.Ambient = amb end
-                    if o.OutdoorAmbient ~= amb then o.OutdoorAmbient = amb end
-                end)
-            end
-        end
+        pcall(function()
+            Lighting.Ambient = w.AmbientColor
+            Lighting.OutdoorAmbient = w.AmbientColor
+        end)
     end
 
     if w.ColorCorrection and (w.FullBright or w.CustomAmbientEnabled) then
@@ -1887,90 +1911,6 @@ function U.updateTrigger()
 end
 
 --=====================================================================
--- DRAG UTILITY (для кнопки, панели, watermark)
---=====================================================================
-function U.attachDrag(frame, xKey, yKey, isMobileOnly)
-    if isMobileOnly and not M.IsMobile then
-        frame.Draggable = true  -- на ПК обычный drag
-        return
-    end
-    if not isMobileOnly then
-        frame.Draggable = false  -- отключаем стандартный, будем тащить сами
-    else
-        frame.Draggable = false
-    end
-
-    local holdStart = 0
-    local dragging = false
-    local dragOffset = Vector2.zero
-    local lastPos = Vector2.zero
-
-    local function getPos()
-        return frame.AbsolutePosition
-    end
-
-    local function setPosFromAbs(absX, absY)
-        -- absolute -> scale + offset от родителя
-        local parent = frame.Parent
-        local parentAbs = parent and parent.AbsolutePosition or Vector2.zero
-        local parentSize = parent and parent.AbsoluteSize or Camera.ViewportSize
-        local relX = (absX - parentAbs.X) / parentSize.X
-        local relY = (absY - parentAbs.Y) / parentSize.Y
-        frame.Position = UDim2.new(relX, 0, relY, 0)
-        -- Сохраняем в Settings
-        if xKey then U.setPath(xKey, relX) end
-        if yKey then U.setPath(yKey, relY) end
-    end
-
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            holdStart = tick()
-            dragOffset = Vector2.new(input.Position.X, input.Position.Y) - getPos()
-        end
-    end)
-
-    U.addConn(UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            setPosFromAbs(input.Position.X - dragOffset.X, input.Position.Y - dragOffset.Y)
-        end
-    end))
-
-    U.addConn(UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end))
-
-    -- Проверка долгого удержания в RenderStepped
-    U.addConn(RunService.RenderStepped:Connect(function()
-        if holdStart > 0 and not dragging then
-            if tick() - holdStart >= Settings.UI.DragHoldTime then
-                -- проверяем что палец ещё касается
-                local touching = UIS:GetFocusedTextBox() == nil
-                local anyInput = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-                local anyTouch = false
-                for _, t in ipairs(UIS:GetTouches()) do anyTouch = true; break end
-                if anyInput or anyTouch then
-                    dragging = true
-                    holdStart = 0
-                    if M.MobileButtonLockedCheck and M.MobileButtonLockedCheck() then
-                        dragging = false
-                    end
-                else
-                    holdStart = 0
-                end
-            end
-        end
-        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and #UIS:GetTouches() == 0 then
-            holdStart = 0
-        end
-    end))
-end
-
---=====================================================================
 -- GUI
 --=====================================================================
 local parentGui = (function()
@@ -1989,9 +1929,7 @@ M.ScreenGui = ScreenGui
 
 U.setupNotifyHolder(ScreenGui)
 
---=====================================================================
 -- WATERMARK
---=====================================================================
 do
     local wm = Instance.new("Frame", ScreenGui)
     wm.Size = UDim2.new(0, 100, 0, 28)
@@ -2018,8 +1956,6 @@ do
     M.Watermark = wm
     M.WatermarkText = wt
 
-    U.attachDrag(wm, "UI.WatermarkX", "UI.WatermarkY", false)
-
     task.spawn(function()
         while ScreenGui.Parent do
             local fps = math.floor(1 / math.max(RunService.RenderStepped:Wait(), 1e-6))
@@ -2030,7 +1966,7 @@ do
             local time = os.date("%H:%M:%S")
             local pc = #Players:GetPlayers()
             wt.Text = string.format(
-                "  MixWare.lol v2.8   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+                "  MixWare.lol v2.8.5   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
                 M.ActiveConfigName, time, fps, ping, pc)
             task.wait(0.5)
         end
@@ -2103,8 +2039,6 @@ function U.clearInvList()
     for _, r in ipairs(M.InvRows) do r:Destroy() end
     M.InvRows = {}
 end
-
-U.attachDrag(M.InvPanel, "UI.InventoryX", "UI.InventoryY", false)
 
 function U.gatherAllTools(plr)
     local seen, tools = {}, {}
@@ -2218,11 +2152,10 @@ function U.updateInventoryESP()
 end
 
 --=====================================================================
--- MOBILE AIM BUTTON
+-- MOBILE BUTTON
 --=====================================================================
 M.MobileButtonActive = false
 M.MobileAimBtn = nil
-M.MobileAimBtnConn = nil
 
 function U.createMobileAimButton()
     if M.MobileAimBtn then return end
@@ -2245,12 +2178,11 @@ function U.createMobileAimButton()
     stroke.Color = Theme.Stroke
     stroke.Thickness = 2
 
-    -- Замок в углу
     local lock = Instance.new("TextButton", btn)
     lock.Size = UDim2.new(0, 20, 0, 20)
     lock.Position = UDim2.new(1, -22, 0, 2)
     lock.BackgroundColor3 = Theme.Panel
-    lock.Text = "🔓"
+    lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
     lock.TextColor3 = Theme.Text
     lock.Font = Enum.Font.GothamBold
     lock.TextSize = 12
@@ -2261,22 +2193,7 @@ function U.createMobileAimButton()
         Settings.Aim.MobileButtonLocked = not Settings.Aim.MobileButtonLocked
         lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
     end)
-    lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
 
-    -- Основной tap = toggle
-    btn.MouseButton1Click:Connect(function()
-        if Settings.Aim.MobileButtonLocked then
-            -- если locked — кнопка не тащится, но toggle работает
-            M.MobileButtonActive = not M.MobileButtonActive
-            btn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
-            return
-        end
-        -- иначе начинаем отслеживать long-hold
-        -- Логика: если тап короткий — toggle. Если долгий — drag.
-        -- Реализуем через InputBegan/InputEnded вручную, чтобы отличить.
-    end)
-
-    -- Полная реализация tap vs hold
     local holdStart = 0
     local isDragging = false
     local dragOffset = Vector2.zero
@@ -2309,10 +2226,7 @@ function U.createMobileAimButton()
             local heldTime = tick() - holdStart
             if isDragging then
                 isDragging = false
-            elseif heldTime >= Settings.UI.DragHoldTime then
-                -- долго держали но не двигались
-            else
-                -- короткий тап → toggle
+            elseif heldTime < Settings.UI.DragHoldTime then
                 if not Settings.Aim.MobileButtonLocked then
                     M.MobileButtonActive = not M.MobileButtonActive
                     btn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
@@ -2322,17 +2236,13 @@ function U.createMobileAimButton()
         end
     end))
 
-    -- Проверка в RenderStepped для drag после долгого удержания
     U.addConn(RunService.RenderStepped:Connect(function()
         if holdStart > 0 and not isDragging and not Settings.Aim.MobileButtonLocked then
             if tick() - holdStart >= Settings.UI.DragHoldTime then
                 local anyInput = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
                 local anyTouch = #UIS:GetTouches() > 0
-                if anyInput or anyTouch then
-                    isDragging = true
-                else
-                    holdStart = 0
-                end
+                if anyInput or anyTouch then isDragging = true
+                else holdStart = 0 end
             end
         end
         if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and #UIS:GetTouches() == 0 then
@@ -2538,8 +2448,6 @@ function U.makeColorPicker(parent, text, path, cb)
     hueMarker.BackgroundColor3 = Color3.new(1,1,1)
     hueMarker.BorderSizePixel = 0
     Instance.new("UICorner", hueMarker).CornerRadius = UDim.new(0, 2)
-    local hueMarkerStroke = Instance.new("UIStroke", hueMarker)
-    hueMarkerStroke.Color = Color3.new(0,0,0); hueMarkerStroke.Thickness = 1
 
     local brightBar = Instance.new("Frame", row)
     brightBar.Size = UDim2.new(1, -20, 0, 14)
@@ -2561,8 +2469,6 @@ function U.makeColorPicker(parent, text, path, cb)
     brightMarker.BackgroundColor3 = Color3.new(1,1,1)
     brightMarker.BorderSizePixel = 0
     Instance.new("UICorner", brightMarker).CornerRadius = UDim.new(0, 2)
-    local brightMarkerStroke = Instance.new("UIStroke", brightMarker)
-    brightMarkerStroke.Color = Color3.new(0,0,0); brightMarkerStroke.Thickness = 1
 
     local function emit()
         local c = Color3.fromHSV(h, s, v)
@@ -2701,7 +2607,7 @@ TitleGrad.Color = ColorSequence.new({
 M.Title = Instance.new("TextLabel", M.TitleBar)
 M.Title.Size = UDim2.new(1, -80, 1, 0); M.Title.Position = UDim2.new(0, 14, 0, 0)
 M.Title.BackgroundTransparency = 1
-M.Title.Text = "MixWare.lol  •  v2.8"
+M.Title.Text = "MixWare.lol  •  v2.8.5"
 M.Title.TextColor3 = Theme.Text
 M.Title.Font = Enum.Font.GothamBold
 M.Title.TextSize = 13
@@ -2830,6 +2736,14 @@ U.selectTab("AimBot")
 U.makeToggle(AimPage, "AimBot Enabled", "Aim.Enabled")
 U.makeSlider(AimPage, "FOV", 10, 500, "Aim.FOV")
 U.makeToggle(AimPage, "Show FOV", "Aim.ShowFOV")
+U.makeColorPicker(AimPage, "FOV Border Color", "Aim.FOVColor")
+U.makeToggle(AimPage, "FOV Fill", "Aim.FOVFillEnabled")
+U.makeColorPicker(AimPage, "FOV Fill Center", "Aim.FOVFillCenterColor")
+U.makeSlider(AimPage, "FOV Fill Transparency", 0, 1, "Aim.FOVFillTransparency")
+U.makeToggle(AimPage, "Target Pulse", "Aim.TargetPulseEnabled")
+U.makeSlider(AimPage, "Target Pulse Speed", 0.5, 5, "Aim.TargetPulseSpeed")
+U.makeSlider(AimPage, "Target Pulse Min", 0, 1, "Aim.TargetPulseMin")
+U.makeSlider(AimPage, "Target Pulse Max", 0, 1, "Aim.TargetPulseMax")
 U.makeToggle(AimPage, "Instant Snap", "Aim.Instant")
 U.makeSlider(AimPage, "Smoothness", 0.01, 1, "Aim.Smoothness")
 U.makeDropdown(AimPage, "Smooth Curve", {"Linear","EaseOut","Sine"}, "Aim.SmoothCurve")
@@ -2857,8 +2771,6 @@ end)
 U.makeSlider(AimPage, "Head Mover Distance", 5, 200, "Aim.HeadMoverDistance")
 U.makeSlider(AimPage, "Head Mover Speed", 0.05, 1, "Aim.HeadMoverSpeed")
 U.makeToggle(AimPage, "Head Mover Only When Aiming", "Aim.HeadMoverOnlyAimKey")
-
--- Mobile button
 U.makeToggle(AimPage, "Mobile Aim Button", "Aim.MobileButtonShow", function(v)
     U.setMobileButtonVisible(v)
 end)
@@ -2908,7 +2820,7 @@ U.makeToggle(TrgPage, "Wall Check", "Trigger.WallCheck")
 U.makeToggle(TrgPage, "Only When Aim Key Down", "Trigger.OnlyAimKey")
 
 --=====================================================================
--- ENEMIES PAGE
+-- ENEMIES PAGE (БЕЗ Hand/Weapon Chams — они в World)
 --=====================================================================
 U.makeToggle(EnemiesPage, "ESP Master Toggle", "ESP.Enabled", function(v)
     if not v then for _, d in pairs(M.ESPData) do U.hideAllESP(d) end end
@@ -2917,12 +2829,6 @@ U.makeToggle(EnemiesPage, "Chams (Highlight)", "ESP.ChamsEnabled")
 U.makeColorPicker(EnemiesPage, "Chams Color", "ESP.ChamsColor")
 U.makeColorPicker(EnemiesPage, "Chams Target Color", "ESP.ChamsTargetColor")
 U.makeSlider(EnemiesPage, "Chams Transparency", 0, 1, "ESP.ChamsTransp")
-U.makeToggle(EnemiesPage, "Hand Chams", "ESP.HandChamsEnabled")
-U.makeColorPicker(EnemiesPage, "Hand Chams Color", "ESP.HandChamsColor")
-U.makeSlider(EnemiesPage, "Hand Chams Transparency", 0, 1, "ESP.HandChamsTransp")
-U.makeToggle(EnemiesPage, "Weapon Chams", "ESP.WeaponChamsEnabled")
-U.makeColorPicker(EnemiesPage, "Weapon Chams Color", "ESP.WeaponChamsColor")
-U.makeSlider(EnemiesPage, "Weapon Chams Transparency", 0, 1, "ESP.WeaponChamsTransp")
 U.makeToggle(EnemiesPage, "Box ESP", "ESP.BoxEnabled")
 U.makeColorPicker(EnemiesPage, "Box Color", "ESP.BoxColor")
 U.makeSlider(EnemiesPage, "Box Thickness", 1, 5, "ESP.BoxThickness")
@@ -2941,10 +2847,6 @@ U.makeToggle(EnemiesPage, "Show Distance", "ESP.DistanceEnabled")
 U.makeSlider(EnemiesPage, "Max Distance", 50, 3000, "ESP.MaxDistance")
 U.makeToggle(EnemiesPage, "Visible Check", "ESP.VisibleCheck")
 U.makeColorPicker(EnemiesPage, "Visible Color", "ESP.VisibleColor")
-U.makeToggle(EnemiesPage, "Behind-Wall Pulse", "ESP.PulseEnabled")
-U.makeSlider(EnemiesPage, "Pulse Speed", 0.5, 3, "ESP.PulseSpeed")
-U.makeSlider(EnemiesPage, "Pulse Min Alpha", 0.1, 0.9, "ESP.PulseMin")
-U.makeSlider(EnemiesPage, "Pulse Max Alpha", 0.1, 1, "ESP.PulseMax")
 U.makeToggle(EnemiesPage, "Skeleton ESP", "ESP.SkeletonEnabled")
 U.makeColorPicker(EnemiesPage, "Skeleton Color", "ESP.SkeletonColor")
 U.makeSlider(EnemiesPage, "Skeleton Thickness", 1, 4, "ESP.SkeletonThickness")
@@ -3124,7 +3026,7 @@ U.makeButton(InventoryPage, "Reset Panel Position", function()
 end)
 
 --=====================================================================
--- WORLD PAGE
+-- WORLD PAGE (с Hand/Weapon Chams для себя)
 --=====================================================================
 U.makeToggle(WorldPage, "World ESP", "WorldESP.Enabled")
 U.makeColorPicker(WorldPage, "World Color", "WorldESP.Color")
@@ -3141,17 +3043,24 @@ U.makeToggle(WorldPage, "Disable Sun Rays", "World.DisableSunRays")
 U.makeToggle(WorldPage, "Disable Atmosphere", "World.DisableAtmosphere")
 U.makeToggle(WorldPage, "Remove Grass", "World.RemoveGrass", function() U.applyRemoveGrass() end)
 U.makeToggle(WorldPage, "Custom Camera FOV", "World.CameraFOVEnabled", function(v)
-    if v then
-        pcall(function() Camera.FieldOfView = Settings.World.CameraFOV end)
-    else
-        pcall(function() Camera.FieldOfView = 70 end)
-    end
+    if v then pcall(function() Camera.FieldOfView = Settings.World.CameraFOV end)
+    else pcall(function() Camera.FieldOfView = 70 end) end
 end)
 U.makeSlider(WorldPage, "Camera FOV", 30, 120, "World.CameraFOV", function(v)
     if Settings.World.CameraFOVEnabled then
         pcall(function() Camera.FieldOfView = v end)
     end
 end)
+
+-- Hand/Weapon Chams (для LocalPlayer)
+U.makeToggle(WorldPage, "Hand Chams (self)", "World.HandChamsEnabled")
+U.makeDropdown(WorldPage, "Hand Material", {"Neon","ForceField","Glass","Plastic","Metal","Ice","Marble","Granite","Slate","Concrete","Wood","Sand","Fabric","Foil","Grass","Pebble","Salt","Snow","Glacier","Mud"}, "World.HandChamsMaterial")
+U.makeColorPicker(WorldPage, "Hand Color", "World.HandChamsColor")
+U.makeSlider(WorldPage, "Hand Transparency", 0, 1, "World.HandChamsTransparency")
+U.makeToggle(WorldPage, "Weapon Chams (self)", "World.WeaponChamsEnabled")
+U.makeDropdown(WorldPage, "Weapon Material", {"Neon","ForceField","Glass","Plastic","Metal","Ice","Marble","Granite","Slate","Concrete","Wood","Sand","Fabric","Foil","Grass","Pebble","Salt","Snow","Glacier","Mud"}, "World.WeaponChamsMaterial")
+U.makeColorPicker(WorldPage, "Weapon Color", "World.WeaponChamsColor")
+U.makeSlider(WorldPage, "Weapon Transparency", 0, 1, "World.WeaponChamsTransparency")
 
 --=====================================================================
 -- MISC PAGE
@@ -3266,7 +3175,6 @@ function U.loadConfig(name, silent)
     if Settings.Misc.TPWalkEnabled then U.setTPWalk(true) else U.setTPWalk(false) end
     if Settings.Misc.InfJump then U.setInfJump(true) else U.setInfJump(false) end
     if Settings.Aim.HeadMover then U.startHeadMover() else U.stopHeadMover() end
-    -- Позиции
     M.InvPanel.Position = UDim2.new(Settings.UI.InventoryX, 0, Settings.UI.InventoryY, 0)
     M.Watermark.Position = UDim2.new(Settings.UI.WatermarkX, 0, Settings.UI.WatermarkY, 0)
     if M.MobileAimBtn then
@@ -3451,15 +3359,6 @@ function U.applyTheme(name)
     local activeName
     for k, p in pairs(M.TabPages) do if p.Visible then activeName = k; break end end
     if activeName then U.selectTab(activeName) end
-    -- Watermark, InvPanel, MobileBtn
-    M.Watermark.BackgroundColor3 = Theme.Title
-    M.WatermarkText.TextColor3 = Theme.Text
-    M.InvPanel.BackgroundColor3 = Theme.Bg
-    InvHeader.BackgroundColor3 = Theme.Title
-    InvHeader.TextColor3 = Theme.Text
-    if M.MobileAimBtn then
-        M.MobileAimBtn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
-    end
 end
 
 function U.applyScale(name)
@@ -3481,6 +3380,7 @@ M.ScaleBtn.MouseButton1Click:Connect(function()
     U.applyScale(scaleOrder[idx])
 end)
 
+-- Keybind manager
 local kbHeader = Instance.new("TextLabel", MenuPage)
 kbHeader.Size = UDim2.new(1, -8, 0, 20)
 kbHeader.BackgroundTransparency = 1
@@ -3537,9 +3437,7 @@ U.makeKeybindRow(MenuPage, "Aim Key",
         else Settings.Aim.KeyName = v.Name end
     end)
 
---=====================================================================
 -- SEARCH
---=====================================================================
 M.SearchBar:GetPropertyChangedSignal("Text"):Connect(function()
     local q = string.lower(M.SearchBar.Text)
     for _, page in pairs(M.TabPages) do
@@ -3567,6 +3465,7 @@ function U.UNLOAD()
     if M.AntiFlingConn then M.AntiFlingConn:Disconnect(); M.AntiFlingConn = nil end
     U.stopHeadMover()
     U.stopFreecam()
+    U.clearLocalMaterial()
     if M.WorldBackup then
         local o = M.OriginalLighting
         pcall(function()
@@ -3611,9 +3510,7 @@ task.spawn(function()
     end
 end)
 
---=====================================================================
 -- MOBILE BUTTON INIT
---=====================================================================
 task.spawn(function()
     task.wait(0.5)
     if M.IsMobile and Settings.Aim.MobileButtonShow then
@@ -3625,60 +3522,10 @@ end)
 -- MAIN LOOP
 --=====================================================================
 U.addConn(RunService.RenderStepped:Connect(function()
-    M.FrameId = M.FrameId + 1
-    local now = tick()
-    local espOn = Settings.ESP.Enabled
-    local chamOn = Settings.ESP.ChamsEnabled or Settings.ESP.HandChamsEnabled or Settings.ESP.WeaponChamsEnabled
-    local feats = Settings.ESP
-    local drawOn = espOn and (feats.BoxEnabled or feats.CornerEnabled or feats.Box3DEnabled
-        or feats.TracerEnabled or feats.NameEnabled or feats.DistanceEnabled or feats.WeaponNameEnabled
-        or feats.SkeletonEnabled or feats.HealthBarEnabled or feats.NametagsEnabled or feats.ArrowsEnabled)
+    if Settings.ESP.Enabled then U.drawESP()
+    else for _, d in pairs(M.ESPData) do U.hideAllESP(d) end end
 
-    -- Кэшируем список целей один раз за кадр (используется ESP/chams/cleanup)
-    local targets = M.FramePlayers
-    local n = 0
-    local seen = {}
-    if drawOn or chamOn then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                local ch, hrp = U.getCharacterForPlayer(plr)
-                if ch and hrp then
-                    seen[ch] = true
-                    n = n + 1
-                    targets[n] = {plr = plr, ch = ch, hrp = hrp}
-                end
-            end
-        end
-    end
-    for i = n + 1, #targets do targets[i] = nil end
-
-    if drawOn then
-        U.drawESP()
-    end
-
-    if chamOn and now - M.LastChamsUpdate >= ESP_INTERVAL then
-        M.LastChamsUpdate = now
-        M.ChamsActive = true
-        for i = 1, #targets do
-            local t = targets[i]
-            U.updateChamsForModel(t.ch, M.CurrentTarget == t.plr)
-        end
-    elseif not chamOn and M.ChamsActive then
-        M.ChamsActive = false
-        U.disableAllChams()
-    end
-
-    if drawOn or chamOn then
-        for m, d in pairs(M.ESPData) do
-            if not seen[m] or not m.Parent then
-                U.destroyESPStruct(d)
-                M.ESPData[m] = nil
-            end
-        end
-    elseif next(M.ESPData) then
-        for m, d in pairs(M.ESPData) do U.hideAllESP(d) end
-    end
-
+    U.updateChamsAll()
     U.drawCrosshair()
     U.drawTargetLine()
 
@@ -3698,16 +3545,14 @@ U.addConn(RunService.RenderStepped:Connect(function()
     U.updateInventoryESP()
     U.keepWorldValues()
     U.keepCameraFOV()
+    U.applyLocalMaterial()
 end))
 
 U.addConn(RunService.Heartbeat:Connect(function()
-    M.FrameId = M.FrameId + 1
     U.heartbeatAimbot()
 end))
 
---=====================================================================
 -- HOTKEYS
---=====================================================================
 U.addConn(UIS.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Settings.UI.MenuKey then
@@ -3718,9 +3563,7 @@ U.addConn(UIS.InputBegan:Connect(function(input, gpe)
     end
 end))
 
---=====================================================================
 -- MIN / CLOSE
---=====================================================================
 do
     local minimized = false
     local savedSize = M.Main.Size
@@ -3743,4 +3586,4 @@ do
     end)
 end
 
-U.notify("MixWare.lol v2.8 loaded!" .. (M.IsMobile and " [MOBILE]" or ""), Theme.Accent)
+U.notify("MixWare.lol v2.8.5 loaded!" .. (M.IsMobile and " [MOBILE]" or ""), Theme.Accent)
