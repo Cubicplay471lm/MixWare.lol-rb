@@ -1,14 +1,15 @@
 --[[
-    MixWare.lol v2.8.6
+    MixWare.lol v2.8.7
     Combat → AimBot | Trigger
     Visuals → Enemies | Items | Inventory | World | Crosshair
     Misc → Misc | Config | Menu
 
-    Новое в 2.8.6:
-      - FIX: destroyESPStruct / hideAllESP больше не падают (nil checks)
-      - FIX: updateChamsForModel создаёт полную структуру
-      - FIX: Weapon Chams теперь видит Model-инструменты (Crossbow как Model)
-      - Всё остальное из 2.8.5
+    Новое в 2.8.7:
+      - FIX: MouseBehavior больше не залипает (early-return + Freecam check + страховка)
+      - FIX: LeftAlt — аварийный сброс мыши
+      - FIX: newDrawing проверяет поддержку Visible и падает в заглушку
+      - FIX: drawArrow использует Square если Triangle не работает
+      - FIX: UNLOAD корректно сбрасывает мышь
 --]]
 
 --=====================================================================
@@ -41,6 +42,13 @@ local VirtualInputManager = cloneref(game:GetService("VirtualInputManager"))
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+
+-- Экстренный сброс при запуске
+pcall(function()
+    UIS.MouseBehavior = Enum.MouseBehavior.Default
+    local cam = workspace.CurrentCamera
+    if cam then cam.CameraType = Enum.CameraType.Custom end
+end)
 
 --=====================================================================
 -- ГЛАВНАЯ ТАБЛИЦА
@@ -322,9 +330,20 @@ function U.playSound(id)
     end)
 end
 
+-- FIX: проверяем что Drawing-объект реально работает
 function U.newDrawing(kind)
     local ok, obj = pcall(function() return Drawing.new(kind) end)
-    if ok and obj then table.insert(M.AllDrawings, obj); return obj end
+    if ok and obj then
+        -- Проверяем что Visible можно установить
+        local testOK = pcall(function() obj.Visible = false end)
+        if testOK then
+            table.insert(M.AllDrawings, obj)
+            return obj
+        end
+        -- Если нет — удаляем
+        pcall(function() obj:Remove() end)
+    end
+    -- Заглушка
     return {
         Remove=function() end,Visible=false,Color=Color3.new(),Thickness=1,Transparency=1,
         From=Vector2.new(),To=Vector2.new(),Position=Vector2.new(),Size=Vector2.new(),
@@ -413,7 +432,8 @@ function U.createESPStruct()
     d.hpFill = U.newDrawing("Square")
     d.nametag = U.newDrawing("Text")
     d.nametag.Center = true; d.nametag.Outline = true; d.nametag.Size = 12
-    d.arrow = U.newDrawing("Triangle")
+    -- FIX: используем Square вместо Triangle
+    d.arrow = U.newDrawing("Square")
     d.arrow.Filled = true
     d.weapon = U.newDrawing("Text")
     d.weapon.Center = true; d.weapon.Outline = true
@@ -421,7 +441,6 @@ function U.createESPStruct()
     return d
 end
 
--- FIX: безопасное удаление
 function U.destroyESPStruct(d)
     if not d then return end
     if d.box then pcall(function() d.box:Remove() end) end
@@ -449,7 +468,6 @@ function U.destroyESPStruct(d)
     end
 end
 
--- FIX: безопасное скрытие
 function U.hideAllESP(d)
     if not d then return end
     if d.box then pcall(function() d.box.Visible = false end) end
@@ -468,7 +486,7 @@ function U.hideAllESP(d)
 end
 
 --=====================================================================
--- CHAMS (для врагов)
+-- CHAMS для врагов
 --=====================================================================
 function U.updateChamsForModel(model, isTarget)
     if not model or not model.Parent then return end
@@ -512,15 +530,13 @@ function U.updateChamsAll()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local ch = plr.Character
-            if ch then
-                U.updateChamsForModel(ch, plr == M.CurrentTarget)
-            end
+            if ch then U.updateChamsForModel(ch, plr == M.CurrentTarget) end
         end
     end
 end
 
 --=====================================================================
--- HAND/WEAPON CHAMS для LocalPlayer (Material + Color)
+-- HAND / WEAPON CHAMS для LocalPlayer
 --=====================================================================
 M.LocalMatOriginal = {}
 
@@ -537,14 +553,12 @@ function U.clearLocalMaterial()
     M.LocalMatOriginal = {}
 end
 
--- FIX: правильный сбор частей. Tool может быть Model, Handle может быть Model/Folder
 function U.collectLocalMaterialParts()
     local w = Settings.World
     local char = LocalPlayer.Character
     if not char then return {} end
     local parts = {}
 
-    -- Hands
     if w.HandChamsEnabled then
         local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm",
                            "Left Arm","Right Arm","LeftUpperArm","RightUpperArm"}
@@ -556,10 +570,8 @@ function U.collectLocalMaterialParts()
         end
     end
 
-    -- Weapons: ищем всё что похоже на оружие
     if w.WeaponChamsEnabled then
         for _, child in ipairs(char:GetChildren()) do
-            -- Вариант 1: Tool напрямую в Character
             if child:IsA("Tool") then
                 for _, d in ipairs(child:GetDescendants()) do
                     if d:IsA("BasePart") then
@@ -567,34 +579,19 @@ function U.collectLocalMaterialParts()
                     end
                 end
             end
-            -- Вариант 2: Model в руках (кастомный инвентарь как в твоём случае)
-            if child:IsA("Model") then
-                -- Проверяем — это оружие? Ищем маркер в имени/классах или Handle
+            if child:IsA("Model") and not child:FindFirstChildOfClass("Humanoid") then
                 local isWeapon = false
-                -- Если модель названа как оружие (Crossbow, Gun, Knife и т.д.) и в ней есть части
                 for _, d in ipairs(child:GetDescendants()) do
-                    if d:IsA("BasePart") then
-                        isWeapon = true
-                        break
-                    end
+                    if d:IsA("BasePart") then isWeapon = true; break end
                 end
-                -- Дополнительно: убеждаемся что модель не Humanoid-персонаж
-                if isWeapon and not child:FindFirstChildOfClass("Humanoid") then
-                    -- Если модель в руке — она привязана к RightHand/LeftHand через Weld/Motor6D
-                    -- Либо просто рядом — проверяем расстояние до руки
+                if isWeapon then
                     local rh = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
                     local lh = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
                     local attached = false
-                    if rh or lh then
-                        for _, d in ipairs(child:GetDescendants()) do
-                            if d:IsA("BasePart") then
-                                if rh and (d.Position - rh.Position).Magnitude < 5 then
-                                    attached = true; break
-                                end
-                                if lh and (d.Position - lh.Position).Magnitude < 5 then
-                                    attached = true; break
-                                end
-                            end
+                    for _, d in ipairs(child:GetDescendants()) do
+                        if d:IsA("BasePart") then
+                            if rh and (d.Position - rh.Position).Magnitude < 5 then attached = true; break end
+                            if lh and (d.Position - lh.Position).Magnitude < 5 then attached = true; break end
                         end
                     end
                     if attached then
@@ -608,25 +605,18 @@ function U.collectLocalMaterialParts()
             end
         end
     end
-
     return parts
 end
 
 function U.applyLocalMaterial()
     local w = Settings.World
-    local handsOn = w.HandChamsEnabled
-    local weaponOn = w.WeaponChamsEnabled
-
-    if not handsOn and not weaponOn then
-        if next(M.LocalMatOriginal) ~= nil then
-            U.clearLocalMaterial()
-        end
+    if not w.HandChamsEnabled and not w.WeaponChamsEnabled then
+        if next(M.LocalMatOriginal) ~= nil then U.clearLocalMaterial() end
         return
     end
 
     local parts = U.collectLocalMaterialParts()
 
-    -- Применяем
     for _, entry in ipairs(parts) do
         local part = entry.part
         if part and part.Parent then
@@ -655,7 +645,6 @@ function U.applyLocalMaterial()
         end
     end
 
-    -- Восстанавливаем те части, которые больше не должны краситься
     for part, orig in pairs(M.LocalMatOriginal) do
         local stillValid = false
         for _, entry in ipairs(parts) do
@@ -723,23 +712,31 @@ function U.drawSkeleton(model, d, color, thick)
     for i = idx + 1, #d.skeleton do d.skeleton[i].Visible = false end
 end
 
+-- FIX: drawArrow через Square
 function U.drawArrow(d, worldPos, color, size)
+    if not d or not d.arrow then return end
     local sp, on = U.worldToScreen(worldPos)
-    if on then d.arrow.Visible = false; return end
+    if on then
+        d.arrow.Visible = false
+        return
+    end
     local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
     local rel = worldPos - Camera.CFrame.Position
     local x = rel:Dot(Camera.CFrame.RightVector)
     local y = rel:Dot(Camera.CFrame.UpVector)
     local mag = math.sqrt(x*x + y*y)
-    if mag < 0.01 then d.arrow.Visible = false; return end
+    if mag < 0.01 then
+        d.arrow.Visible = false
+        return
+    end
     local dir = Vector2.new(x/mag, -y/mag)
     local radius = math.min(Camera.ViewportSize.X, Camera.ViewportSize.Y) * 0.35
     local tip = center + dir * radius
-    local perp = Vector2.new(-dir.Y, dir.X) * (size/2)
-    d.arrow.PointA = tip
-    d.arrow.PointB = center + dir * (radius - size) + perp
-    d.arrow.PointC = center + dir * (radius - size) - perp
-    d.arrow.Color = color; d.arrow.Filled = true; d.arrow.Visible = true
+    d.arrow.Size = Vector2.new(size, size)
+    d.arrow.Position = Vector2.new(tip.X - size/2, tip.Y - size/2)
+    d.arrow.Color = color
+    d.arrow.Filled = true
+    d.arrow.Visible = true
 end
 
 function U.getFadeAlpha(dist, maxDist)
@@ -759,7 +756,6 @@ function U.getWeaponName(model)
             if c:IsA("Tool") or c:IsA("Model") then return c.Name end
         end
     end
-    -- Проверяем Model рядом с руками
     for _, child in ipairs(model:GetChildren()) do
         if child:IsA("Model") and not child:FindFirstChildOfClass("Humanoid") then
             return child.Name
@@ -953,7 +949,6 @@ function U.drawESPForModel(model, plr)
     if Settings.ESP.ArrowsEnabled then
         local hp = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
         if hp then U.drawArrow(d, hp.Position, override or Settings.ESP.ArrowsColor, Settings.ESP.ArrowsSize) end
-        if d.arrow.Visible then d.arrow.Transparency = alpha end
     else d.arrow.Visible = false end
 end
 
@@ -1094,7 +1089,7 @@ end
 M.CurrentTarget = nil
 M.StickyTarget = nil
 M.PrevSticky = nil
-M.AimArrow = U.newDrawing("Triangle")
+M.AimArrow = U.newDrawing("Square")
 M.AimArrow.Visible = false
 M.AimArrow.Filled = true
 
@@ -1320,8 +1315,18 @@ function U.heartbeatAimbot()
     if keyDown and t then U.aimAt(t) end
 end
 
+-- FIX: надёжная блокировка мыши
 M.MouseLocked = false
 function U.setMouseLock(state)
+    if M.FreecamActive then
+        if M.MouseLocked then
+            pcall(function() UIS.MouseBehavior = Enum.MouseBehavior.Default end)
+            M.MouseLocked = false
+        end
+        return
+    end
+    if state == M.MouseLocked then return end
+    M.MouseLocked = state
     pcall(function()
         if state then
             UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
@@ -1329,7 +1334,6 @@ function U.setMouseLock(state)
             UIS.MouseBehavior = Enum.MouseBehavior.Default
         end
     end)
-    M.MouseLocked = state
 end
 
 function U.drawAimVisuals(target)
@@ -1352,9 +1356,9 @@ function U.drawAimVisuals(target)
                 if dir.Magnitude < 1 then dir = Vector2.new(0, 1) end
                 dir = dir.Unit * 40
                 local perp = Vector2.new(-dir.Y, dir.X).Unit * 8
-                M.AimArrow.PointA = origin + dir
-                M.AimArrow.PointB = origin + perp
-                M.AimArrow.PointC = origin - perp
+                -- Square вместо Triangle
+                M.AimArrow.Size = Vector2.new(10, 10)
+                M.AimArrow.Position = Vector2.new(origin.X + dir.X - 5, origin.Y + dir.Y - 5)
                 M.AimArrow.Color = Settings.ESP.ChamsTargetColor
                 M.AimArrow.Filled = true
                 M.AimArrow.Visible = true
@@ -2005,7 +2009,7 @@ do
             local time = os.date("%H:%M:%S")
             local pc = #Players:GetPlayers()
             wt.Text = string.format(
-                "  MixWare.lol v2.8.6   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+                "  MixWare.lol v2.8.7   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
                 M.ActiveConfigName, time, fps, ping, pc)
             task.wait(0.5)
         end
@@ -2441,7 +2445,6 @@ function U.makeButton(parent, text, cb)
     return row
 end
 
--- HSV COLORPICKER
 function U.makeColorPicker(parent, text, path, cb)
     local row = U.makeRow(parent, 76)
     local lbl = Instance.new("TextLabel", row)
@@ -2452,14 +2455,12 @@ function U.makeColorPicker(parent, text, path, cb)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
 
     local initial = U.getPath(path) or Color3.new(1,1,1)
-
     local swatch = Instance.new("Frame", row)
     swatch.Size = UDim2.new(0, 40, 0, 20); swatch.Position = UDim2.new(1, -50, 0, 2)
     swatch.BackgroundColor3 = initial
     swatch.BorderSizePixel = 0
     Instance.new("UICorner", swatch).CornerRadius = UDim.new(0, 5)
-    local swatchStroke = Instance.new("UIStroke", swatch)
-    swatchStroke.Color = Theme.Stroke; swatchStroke.Thickness = 1
+    Instance.new("UIStroke", swatch).Color = Theme.Stroke
 
     local h, s, v = Color3.toHSV(initial)
     s = 1
@@ -2644,7 +2645,7 @@ TitleGrad.Color = ColorSequence.new({
 M.Title = Instance.new("TextLabel", M.TitleBar)
 M.Title.Size = UDim2.new(1, -80, 1, 0); M.Title.Position = UDim2.new(0, 14, 0, 0)
 M.Title.BackgroundTransparency = 1
-M.Title.Text = "MixWare.lol  •  v2.8.6"
+M.Title.Text = "MixWare.lol  •  v2.8.7"
 M.Title.TextColor3 = Theme.Text
 M.Title.Font = Enum.Font.GothamBold
 M.Title.TextSize = 13
@@ -2946,8 +2947,7 @@ M.ItemPopup.BorderSizePixel = 0
 M.ItemPopup.Visible = false
 M.ItemPopup.ZIndex = 10
 Instance.new("UICorner", M.ItemPopup).CornerRadius = UDim.new(0, 10)
-local popupStroke = Instance.new("UIStroke", M.ItemPopup)
-popupStroke.Color = Theme.Accent; popupStroke.Thickness = 1
+Instance.new("UIStroke", M.ItemPopup).Color = Theme.Accent
 
 local popupTitle = Instance.new("TextLabel", M.ItemPopup)
 popupTitle.Size = UDim2.new(1, -60, 0, 26); popupTitle.Position = UDim2.new(0, 10, 0, 4)
@@ -3390,7 +3390,8 @@ M.ThemeBtn.MouseButton1Click:Connect(function()
 end)
 M.ScaleBtn.MouseButton1Click:Connect(function()
     local idx = table.find(scaleOrder, Settings.UI.Scale) or 1
-    idx = idx % #scaleOrder + 1    U.applyScale(scaleOrder[idx])
+    idx = idx % #scaleOrder + 1
+    U.applyScale(scaleOrder[idx])
 end)
 
 local kbHeader = Instance.new("TextLabel", MenuPage)
@@ -3467,7 +3468,11 @@ end)
 
 -- UNLOAD
 function U.UNLOAD()
-    pcall(function() UIS.MouseBehavior = Enum.MouseBehavior.Default end)
+    pcall(function()
+        UIS.MouseBehavior = Enum.MouseBehavior.Default
+        UIS.MouseIconEnabled = true
+    end)
+    M.MouseLocked = false
     U.disconnectAll()
     M.StickyTarget = nil
     if M.InfJumpConn then pcall(function() M.InfJumpConn:Disconnect() end); M.InfJumpConn = nil end
@@ -3518,7 +3523,7 @@ task.spawn(function()
     end
 end)
 
--- MOBILE BUTTON INIT
+-- MOBILE
 task.spawn(function()
     task.wait(0.5)
     if M.IsMobile and Settings.Aim.MobileButtonShow then
@@ -3535,14 +3540,28 @@ U.addConn(RunService.RenderStepped:Connect(function()
     U.drawCrosshair()
     U.drawTargetLine()
 
+    -- FIX: одна проверка shouldLock + страховка
+    if not Settings.Aim.Enabled and UIS.MouseBehavior == Enum.MouseBehavior.LockCenter then
+        pcall(function()
+            UIS.MouseBehavior = Enum.MouseBehavior.Default
+            M.MouseLocked = false
+        end)
+    end
+
+    local shouldLock = false
+    if Settings.Aim.Enabled
+        and M.CurrentTarget ~= nil
+        and not M.FreecamActive
+        and U.isAimKeyDown()
+    then
+        shouldLock = true
+    end
+    U.setMouseLock(shouldLock)
+
     if Settings.Aim.Enabled then
         U.drawAimVisuals(M.CurrentTarget)
-        if U.isAimKeyDown() and M.CurrentTarget and not M.FreecamActive then
-            U.setMouseLock(true)
-        else U.setMouseLock(false) end
     else
         U.drawAimVisuals(nil)
-        U.setMouseLock(false)
     end
     U.drawAimDebug()
 
@@ -3566,6 +3585,22 @@ U.addConn(UIS.InputBegan:Connect(function(input, gpe)
         M.Main.Visible = Settings.UI.Open
     elseif input.KeyCode == Settings.UI.UnloadKey then
         U.UNLOAD()
+    elseif input.KeyCode == Enum.KeyCode.LeftAlt then
+        -- FIX: аварийный сброс мыши
+        pcall(function()
+            UIS.MouseBehavior = Enum.MouseBehavior.Default
+            M.MouseLocked = false
+            if M.FreecamActive then U.stopFreecam() end
+            local cam = workspace.CurrentCamera
+            if cam then
+                cam.CameraType = Enum.CameraType.Custom
+                if LocalPlayer.Character then
+                    local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if hum then cam.CameraSubject = hum end
+                end
+            end
+        end)
+        U.notify("Mouse force reset", Theme.Good)
     end
 end))
 
@@ -3592,4 +3627,4 @@ do
     end)
 end
 
-U.notify("MixWare.lol v2.8.6 loaded!" .. (M.IsMobile and " [MOBILE]" or ""), Theme.Accent)
+U.notify("MixWare.lol v2.8.7 loaded! LeftAlt = mouse reset", Theme.Accent)
