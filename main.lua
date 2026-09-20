@@ -1,14 +1,14 @@
 --[[
-    MixWare.lol v2.8.5
+    MixWare.lol v2.8.6
     Combat → AimBot | Trigger
     Visuals → Enemies | Items | Inventory | World | Crosshair
     Misc → Misc | Config | Menu
 
-    Новое в 2.8.5:
-      - FOV Fill: градиент от центра к границе круга
-      - Target Pulse: пульсация всего ESP цели аима
-      - Behind-Wall Pulse удалён
-      - Hand/Weapon Chams: перенесены в World, работают на LocalPlayer через Material+Color
+    Новое в 2.8.6:
+      - FIX: destroyESPStruct / hideAllESP больше не падают (nil checks)
+      - FIX: updateChamsForModel создаёт полную структуру
+      - FIX: Weapon Chams теперь видит Model-инструменты (Crossbow как Model)
+      - Всё остальное из 2.8.5
 --]]
 
 --=====================================================================
@@ -101,7 +101,6 @@ local Settings = {
         CustomAmbientEnabled=false, AmbientColor=Color3.fromRGB(255,255,255),
         CameraFOVEnabled=false, CameraFOV=70,
         DisableSunRays=false, DisableAtmosphere=false, RemoveGrass=false, ColorCorrection=true,
-        -- Hand/Weapon Chams (для LocalPlayer, через Material+Color)
         HandChamsEnabled=false, HandChamsMaterial="Neon",
         HandChamsColor=Color3.fromRGB(255,100,200), HandChamsTransparency=0.2,
         WeaponChamsEnabled=false, WeaponChamsMaterial="Neon",
@@ -121,11 +120,10 @@ local Settings = {
         MobileButtonShow=true,
         MobileButtonX=0.82, MobileButtonY=0.75,
         MobileButtonLocked=false,
-        -- FOV Fill
         FOVFillEnabled=false,
         FOVFillCenterColor=Color3.fromRGB(255,50,50),
         FOVFillTransparency=0.85,
-        -- Target Pulse
+        FOVColor=Color3.fromRGB(160,90,255),
         TargetPulseEnabled=false,
         TargetPulseSpeed=2.0,
         TargetPulseMin=0.3,
@@ -165,9 +163,7 @@ end
 function U.getFOVOrigin() return Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2) end
 
 function U.isAimKeyDown()
-    if M.IsMobile and Settings.Aim.MobileButtonShow and M.MobileButtonActive then
-        return true
-    end
+    if M.IsMobile and Settings.Aim.MobileButtonShow and M.MobileButtonActive then return true end
     local kn = Settings.Aim.KeyName
     if kn == "MouseButton2" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end
     if kn == "MouseButton1" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end
@@ -425,31 +421,41 @@ function U.createESPStruct()
     return d
 end
 
+-- FIX: безопасное удаление
 function U.destroyESPStruct(d)
-    pcall(function() d.box:Remove() end)
-    for _, c in pairs(d.corners) do pcall(function() c:Remove() end) end
-    for _, l in pairs(d.box3d) do pcall(function() l:Remove() end) end
-    for _, l in pairs(d.skeleton) do pcall(function() l:Remove() end) end
-    pcall(function() d.tracer:Remove() end)
-    pcall(function() d.name:Remove() end)
-    pcall(function() d.dist:Remove() end)
-    pcall(function() d.nameShadow:Remove() end)
-    pcall(function() d.hpBg:Remove() end)
-    pcall(function() d.hpFill:Remove() end)
-    pcall(function() d.nametag:Remove() end)
-    pcall(function() d.arrow:Remove() end)
-    pcall(function() d.weapon:Remove() end)
+    if not d then return end
+    if d.box then pcall(function() d.box:Remove() end) end
+    if d.corners then
+        for _, c in pairs(d.corners) do pcall(function() c:Remove() end) end
+    end
+    if d.box3d then
+        for _, l in pairs(d.box3d) do pcall(function() l:Remove() end) end
+    end
+    if d.skeleton then
+        for _, l in pairs(d.skeleton) do pcall(function() l:Remove() end) end
+    end
+    if d.tracer then pcall(function() d.tracer:Remove() end) end
+    if d.name then pcall(function() d.name:Remove() end) end
+    if d.dist then pcall(function() d.dist:Remove() end) end
+    if d.nameShadow then pcall(function() d.nameShadow:Remove() end) end
+    if d.hpBg then pcall(function() d.hpBg:Remove() end) end
+    if d.hpFill then pcall(function() d.hpFill:Remove() end) end
+    if d.nametag then pcall(function() d.nametag:Remove() end) end
+    if d.arrow then pcall(function() d.arrow:Remove() end) end
+    if d.weapon then pcall(function() d.weapon:Remove() end) end
     if d.highlights then
         for _, h in pairs(d.highlights) do pcall(function() h:Destroy() end) end
         d.highlights = nil
     end
 end
 
+-- FIX: безопасное скрытие
 function U.hideAllESP(d)
-    pcall(function() d.box.Visible = false end)
-    for _, c in pairs(d.corners) do c.Visible = false end
-    for _, l in pairs(d.box3d) do l.Visible = false end
-    for _, l in pairs(d.skeleton) do l.Visible = false end
+    if not d then return end
+    if d.box then pcall(function() d.box.Visible = false end) end
+    if d.corners then for _, c in pairs(d.corners) do c.Visible = false end end
+    if d.box3d then for _, l in pairs(d.box3d) do l.Visible = false end end
+    if d.skeleton then for _, l in pairs(d.skeleton) do l.Visible = false end end
     if d.tracer then d.tracer.Visible = false end
     if d.name then d.name.Visible = false end
     if d.dist then d.dist.Visible = false end
@@ -462,15 +468,16 @@ function U.hideAllESP(d)
 end
 
 --=====================================================================
--- CHAMS (только основной, для врагов)
+-- CHAMS (для врагов)
 --=====================================================================
 function U.updateChamsForModel(model, isTarget)
     if not model or not model.Parent then return end
     local d = M.ESPData[model]
     if not d then
-        d = { highlights = {} }
+        d = U.createESPStruct()
         M.ESPData[model] = d
     end
+    if not d.highlights then d.highlights = {} end
 
     if not Settings.ESP.ChamsEnabled then
         if d.highlights and d.highlights.main then
@@ -513,7 +520,7 @@ function U.updateChamsAll()
 end
 
 --=====================================================================
--- HAND / WEAPON CHAMS для LocalPlayer (Material + Color)
+-- HAND/WEAPON CHAMS для LocalPlayer (Material + Color)
 --=====================================================================
 M.LocalMatOriginal = {}
 
@@ -530,24 +537,17 @@ function U.clearLocalMaterial()
     M.LocalMatOriginal = {}
 end
 
-function U.applyLocalMaterial()
+-- FIX: правильный сбор частей. Tool может быть Model, Handle может быть Model/Folder
+function U.collectLocalMaterialParts()
     local w = Settings.World
-    local handsOn = w.HandChamsEnabled
-    local weaponOn = w.WeaponChamsEnabled
-    
-    if not handsOn and not weaponOn then
-        U.clearLocalMaterial()
-        return
-    end
-
     local char = LocalPlayer.Character
-    if not char then return end
-
+    if not char then return {} end
     local parts = {}
 
     -- Hands
-    if handsOn then
-        local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm","Left Arm","Right Arm","LeftUpperArm","RightUpperArm"}
+    if w.HandChamsEnabled then
+        local handNames = {"LeftHand","RightHand","LeftLowerArm","RightLowerArm",
+                           "Left Arm","Right Arm","LeftUpperArm","RightUpperArm"}
         for _, name in ipairs(handNames) do
             local part = char:FindFirstChild(name)
             if part and part:IsA("BasePart") then
@@ -556,9 +556,10 @@ function U.applyLocalMaterial()
         end
     end
 
-    -- Weapons
-    if weaponOn then
+    -- Weapons: ищем всё что похоже на оружие
+    if w.WeaponChamsEnabled then
         for _, child in ipairs(char:GetChildren()) do
+            -- Вариант 1: Tool напрямую в Character
             if child:IsA("Tool") then
                 for _, d in ipairs(child:GetDescendants()) do
                     if d:IsA("BasePart") then
@@ -566,18 +567,64 @@ function U.applyLocalMaterial()
                     end
                 end
             end
+            -- Вариант 2: Model в руках (кастомный инвентарь как в твоём случае)
             if child:IsA("Model") then
-                local rh = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
-                if rh and child:IsDescendantOf(rh) then
-                    for _, d in ipairs(child:GetDescendants()) do
-                        if d:IsA("BasePart") then
-                            table.insert(parts, {part = d, kind = "weapon"})
+                -- Проверяем — это оружие? Ищем маркер в имени/классах или Handle
+                local isWeapon = false
+                -- Если модель названа как оружие (Crossbow, Gun, Knife и т.д.) и в ней есть части
+                for _, d in ipairs(child:GetDescendants()) do
+                    if d:IsA("BasePart") then
+                        isWeapon = true
+                        break
+                    end
+                end
+                -- Дополнительно: убеждаемся что модель не Humanoid-персонаж
+                if isWeapon and not child:FindFirstChildOfClass("Humanoid") then
+                    -- Если модель в руке — она привязана к RightHand/LeftHand через Weld/Motor6D
+                    -- Либо просто рядом — проверяем расстояние до руки
+                    local rh = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+                    local lh = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
+                    local attached = false
+                    if rh or lh then
+                        for _, d in ipairs(child:GetDescendants()) do
+                            if d:IsA("BasePart") then
+                                if rh and (d.Position - rh.Position).Magnitude < 5 then
+                                    attached = true; break
+                                end
+                                if lh and (d.Position - lh.Position).Magnitude < 5 then
+                                    attached = true; break
+                                end
+                            end
+                        end
+                    end
+                    if attached then
+                        for _, d in ipairs(child:GetDescendants()) do
+                            if d:IsA("BasePart") then
+                                table.insert(parts, {part = d, kind = "weapon"})
+                            end
                         end
                     end
                 end
             end
         end
     end
+
+    return parts
+end
+
+function U.applyLocalMaterial()
+    local w = Settings.World
+    local handsOn = w.HandChamsEnabled
+    local weaponOn = w.WeaponChamsEnabled
+
+    if not handsOn and not weaponOn then
+        if next(M.LocalMatOriginal) ~= nil then
+            U.clearLocalMaterial()
+        end
+        return
+    end
+
+    local parts = U.collectLocalMaterialParts()
 
     -- Применяем
     for _, entry in ipairs(parts) do
@@ -608,18 +655,18 @@ function U.applyLocalMaterial()
         end
     end
 
-    -- Удаляем неактуальные
-    for part, _ in pairs(M.LocalMatOriginal) do
+    -- Восстанавливаем те части, которые больше не должны краситься
+    for part, orig in pairs(M.LocalMatOriginal) do
         local stillValid = false
         for _, entry in ipairs(parts) do
             if entry.part == part then stillValid = true; break end
         end
-        if not stillValid or not part.Parent then
+        if not stillValid then
             if part.Parent then
                 pcall(function()
-                    part.Material = M.LocalMatOriginal[part].material
-                    part.Color = M.LocalMatOriginal[part].color
-                    part.Transparency = M.LocalMatOriginal[part].transparency
+                    part.Material = orig.material
+                    part.Color = orig.color
+                    part.Transparency = orig.transparency
                 end)
             end
             M.LocalMatOriginal[part] = nil
@@ -628,7 +675,7 @@ function U.applyLocalMaterial()
 end
 
 --=====================================================================
--- TARGET PULSE (пульсация цели аима)
+-- TARGET PULSE
 --=====================================================================
 function U.getTargetPulseAlpha()
     if not Settings.Aim.TargetPulseEnabled then return 1 end
@@ -712,6 +759,12 @@ function U.getWeaponName(model)
             if c:IsA("Tool") or c:IsA("Model") then return c.Name end
         end
     end
+    -- Проверяем Model рядом с руками
+    for _, child in ipairs(model:GetChildren()) do
+        if child:IsA("Model") and not child:FindFirstChildOfClass("Humanoid") then
+            return child.Name
+        end
+    end
     return nil
 end
 
@@ -729,13 +782,11 @@ function U.drawESPForModel(model, plr)
     if dist > Settings.ESP.MaxDistance then U.hideAllESP(d); return end
 
     local alpha = U.getFadeAlpha(dist, Settings.ESP.MaxDistance)
-    
-    -- Target Pulse: пульсация цели аима
     local isTarget = (plr == M.CurrentTarget)
     if isTarget and Settings.Aim.TargetPulseEnabled then
         alpha = alpha * U.getTargetPulseAlpha()
     end
-    
+
     local visible = true
     if Settings.ESP.VisibleCheck then visible = U.getVisibleStateForModel(model) end
     local override = nil
@@ -1048,17 +1099,15 @@ M.AimArrow.Visible = false
 M.AimArrow.Filled = true
 
 M.FovCircle = U.newDrawing("Circle")
-M.FovCircle.Thickness = 1
+M.FovCircle.Thickness = 2
 M.FovCircle.NumSides = 64
 M.FovCircle.Filled = false
 M.FovCircle.Transparency = 1
-M.FovCircle.Color = Theme.Accent
+M.FovCircle.Color = Color3.fromRGB(160,90,255)
 M.FovCircle.Visible = false
 
--- FOV Fill (градиент из кругов)
 M.FovFillCircles = {}
 M.FovFillMaxCount = 8
-M.FovFillIndex = 0
 
 function U.initFovFill()
     for i = 1, M.FovFillMaxCount do
@@ -1086,22 +1135,16 @@ function U.drawFovFill()
     local center = U.getFOVOrigin()
     local radius = Settings.Aim.FOV
     local centerColor = Settings.Aim.FOVFillCenterColor
-    local edgeColor = Settings.Aim.FOVColor or Settings.Aim.ShowFOV and Theme.Accent or Theme.Accent
-    -- Используем цвет FOV Circle (граница)
-    edgeColor = M.FovCircle.Color or Theme.Accent
-
+    local edgeColor = Settings.Aim.FOVColor or Color3.fromRGB(160,90,255)
     local totalTransp = Settings.Aim.FOVFillTransparency
     local count = M.FovFillMaxCount
 
     for i = 1, count do
         local c = M.FovFillCircles[i]
-        local t = i / count  -- 0..1, 1 = граница
-        -- Радиус: от 0 до полного (слоями)
+        local t = i / count
         c.Position = center
         c.Radius = radius * t
         c.Color = centerColor:Lerp(edgeColor, t)
-        -- Прозрачность: в центре прозрачнее, на границе плотнее
-        -- totalTransp — общая прозрачность заливки, ближе к 1 = прозрачнее
         c.Transparency = 1 - (1 - totalTransp) * t
         c.Visible = true
     end
@@ -1291,11 +1334,9 @@ end
 
 function U.drawAimVisuals(target)
     if Settings.Aim.ShowFOV and Settings.Aim.Enabled and not M.FreecamActive then
-        local edgeColor = Settings.ESP.ChamsColor or Theme.Accent
-        -- Цвет границы — берём отдельно (можно изменить в UI на цвет Chams)
-        if Settings.Aim.FOVColor then edgeColor = Settings.Aim.FOVColor end
         M.FovCircle.Position = U.getFOVOrigin()
         M.FovCircle.Radius = Settings.Aim.FOV
+        M.FovCircle.Color = Settings.Aim.FOVColor
         M.FovCircle.Visible = true
     else M.FovCircle.Visible = false end
     U.drawFovFill()
@@ -1634,7 +1675,6 @@ function U.keepWorldValues()
             if obj:IsA("BlurEffect") then pcall(function() obj.Enabled = false end) end
         end
     end
-
     if w.NoFog and Lighting.FogEnd ~= math.huge then
         pcall(function() Lighting.FogEnd = math.huge end)
     end
@@ -1647,7 +1687,6 @@ function U.keepWorldValues()
             Lighting.OutdoorAmbient = w.AmbientColor
         end)
     end
-
     if w.ColorCorrection and (w.FullBright or w.CustomAmbientEnabled) then
         local cc = M.ColorCorrection
         if not cc or not cc.Parent then
@@ -1966,7 +2005,7 @@ do
             local time = os.date("%H:%M:%S")
             local pc = #Players:GetPlayers()
             wt.Text = string.format(
-                "  MixWare.lol v2.8.5   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+                "  MixWare.lol v2.8.6   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
                 M.ActiveConfigName, time, fps, ping, pc)
             task.wait(0.5)
         end
@@ -2402,9 +2441,7 @@ function U.makeButton(parent, text, cb)
     return row
 end
 
---=====================================================================
--- HSV COLORPICKER (с яркостью)
---=====================================================================
+-- HSV COLORPICKER
 function U.makeColorPicker(parent, text, path, cb)
     local row = U.makeRow(parent, 76)
     local lbl = Instance.new("TextLabel", row)
@@ -2607,7 +2644,7 @@ TitleGrad.Color = ColorSequence.new({
 M.Title = Instance.new("TextLabel", M.TitleBar)
 M.Title.Size = UDim2.new(1, -80, 1, 0); M.Title.Position = UDim2.new(0, 14, 0, 0)
 M.Title.BackgroundTransparency = 1
-M.Title.Text = "MixWare.lol  •  v2.8.5"
+M.Title.Text = "MixWare.lol  •  v2.8.6"
 M.Title.TextColor3 = Theme.Text
 M.Title.Font = Enum.Font.GothamBold
 M.Title.TextSize = 13
@@ -2730,9 +2767,7 @@ local ConfigPage = subBtn("Config")
 local MenuPage = subBtn("Menu")
 U.selectTab("AimBot")
 
---=====================================================================
 -- AIM PAGE
---=====================================================================
 U.makeToggle(AimPage, "AimBot Enabled", "Aim.Enabled")
 U.makeSlider(AimPage, "FOV", 10, 500, "Aim.FOV")
 U.makeToggle(AimPage, "Show FOV", "Aim.ShowFOV")
@@ -2810,18 +2845,14 @@ do
     end)
 end
 
---=====================================================================
 -- TRIGGER PAGE
---=====================================================================
 U.makeToggle(TrgPage, "TriggerBot Enabled", "Trigger.Enabled")
 U.makeSlider(TrgPage, "Delay", 0.01, 1, "Trigger.Delay")
 U.makeToggle(TrgPage, "Team Check", "Trigger.TeamCheck")
 U.makeToggle(TrgPage, "Wall Check", "Trigger.WallCheck")
 U.makeToggle(TrgPage, "Only When Aim Key Down", "Trigger.OnlyAimKey")
 
---=====================================================================
--- ENEMIES PAGE (БЕЗ Hand/Weapon Chams — они в World)
---=====================================================================
+-- ENEMIES PAGE
 U.makeToggle(EnemiesPage, "ESP Master Toggle", "ESP.Enabled", function(v)
     if not v then for _, d in pairs(M.ESPData) do U.hideAllESP(d) end end
 end)
@@ -2865,9 +2896,7 @@ U.makeSlider(EnemiesPage, "Weapon Name Size", 8, 20, "ESP.WeaponNameSize")
 U.makeToggle(EnemiesPage, "Distance Fade", "ESP.DistanceFade")
 U.makeSlider(EnemiesPage, "Fade Start %", 0.1, 1, "ESP.DistanceFadeStart")
 
---=====================================================================
 -- CROSSHAIR PAGE
---=====================================================================
 U.makeToggle(CrosshairPage, "Crosshair Enabled", "Crosshair.Enabled")
 U.makeDropdown(CrosshairPage, "Style", {"Cross","Crosshair","Circle","Dot","Sun"}, "Crosshair.Style")
 U.makeColorPicker(CrosshairPage, "Color", "Crosshair.Color")
@@ -2881,9 +2910,7 @@ U.makeSlider(CrosshairPage, "Circle Radius", 4, 40, "Crosshair.CircleRadius")
 U.makeToggle(CrosshairPage, "Dot", "Crosshair.Dot")
 U.makeSlider(CrosshairPage, "Dot Size", 1, 8, "Crosshair.DotSize")
 
---=====================================================================
 -- ITEMS PAGE
---=====================================================================
 U.makeToggle(ItemsPage, "Item ESP", "ItemESP.Enabled")
 U.makeColorPicker(ItemsPage, "Item Color", "ItemESP.Color")
 U.makeSlider(ItemsPage, "Max Distance", 50, 2000, "ItemESP.MaxDistance")
@@ -3003,9 +3030,7 @@ M.OnItemListChanged = function()
     if M.ItemPopup.Visible then U.rebuildPopupList() end
 end
 
---=====================================================================
 -- INVENTORY PAGE
---=====================================================================
 U.makeToggle(InventoryPage, "Inventory ESP", "InvESP.Enabled", function(v)
     M.InvPanel.Visible = v
 end)
@@ -3025,9 +3050,7 @@ U.makeButton(InventoryPage, "Reset Panel Position", function()
     M.InvPanel.Position = UDim2.new(0.72, 0, 0.25, 0)
 end)
 
---=====================================================================
--- WORLD PAGE (с Hand/Weapon Chams для себя)
---=====================================================================
+-- WORLD PAGE
 U.makeToggle(WorldPage, "World ESP", "WorldESP.Enabled")
 U.makeColorPicker(WorldPage, "World Color", "WorldESP.Color")
 U.makeSlider(WorldPage, "Max Distance", 50, 2000, "WorldESP.MaxDistance")
@@ -3052,7 +3075,6 @@ U.makeSlider(WorldPage, "Camera FOV", 30, 120, "World.CameraFOV", function(v)
     end
 end)
 
--- Hand/Weapon Chams (для LocalPlayer)
 U.makeToggle(WorldPage, "Hand Chams (self)", "World.HandChamsEnabled")
 U.makeDropdown(WorldPage, "Hand Material", {"Neon","ForceField","Glass","Plastic","Metal","Ice","Marble","Granite","Slate","Concrete","Wood","Sand","Fabric","Foil","Grass","Pebble","Salt","Snow","Glacier","Mud"}, "World.HandChamsMaterial")
 U.makeColorPicker(WorldPage, "Hand Color", "World.HandChamsColor")
@@ -3062,9 +3084,7 @@ U.makeDropdown(WorldPage, "Weapon Material", {"Neon","ForceField","Glass","Plast
 U.makeColorPicker(WorldPage, "Weapon Color", "World.WeaponChamsColor")
 U.makeSlider(WorldPage, "Weapon Transparency", 0, 1, "World.WeaponChamsTransparency")
 
---=====================================================================
 -- MISC PAGE
---=====================================================================
 U.makeToggle(MiscPage, "TPWalk", "Misc.TPWalkEnabled", function(v) U.setTPWalk(v) end)
 U.makeSlider(MiscPage, "TPWalk Speed", 1, 200, "Misc.TPWalkSpeed")
 U.makeToggle(MiscPage, "Infinite Jump", "Misc.InfJump", function(v) U.setInfJump(v) end)
@@ -3085,9 +3105,7 @@ U.makeButton(MiscPage, "Load Infinite Yield source", function()
     U.notify("IY source загружен")
 end)
 
---=====================================================================
 -- CONFIG PAGE
---=====================================================================
 M.HasFileAPI = writefile ~= nil and readfile ~= nil
 M.ConfigFolder = "MixWare_Configs"
 M.LastFile = M.ConfigFolder .. "/_last.txt"
@@ -3285,12 +3303,8 @@ end)
 
 U.rebuildConfigList()
 
---=====================================================================
 -- MENU PAGE
---=====================================================================
-U.makeToggle(MenuPage, "Watermark", "UI.Watermark", function(v)
-    M.Watermark.Visible = v
-end)
+U.makeToggle(MenuPage, "Watermark", "UI.Watermark", function(v) M.Watermark.Visible = v end)
 U.makeToggle(MenuPage, "Notifications", "UI.Notifications")
 U.makeSlider(MenuPage, "Drag Hold Time", 0.3, 2, "UI.DragHoldTime")
 
@@ -3376,11 +3390,9 @@ M.ThemeBtn.MouseButton1Click:Connect(function()
 end)
 M.ScaleBtn.MouseButton1Click:Connect(function()
     local idx = table.find(scaleOrder, Settings.UI.Scale) or 1
-    idx = idx % #scaleOrder + 1
-    U.applyScale(scaleOrder[idx])
+    idx = idx % #scaleOrder + 1    U.applyScale(scaleOrder[idx])
 end)
 
--- Keybind manager
 local kbHeader = Instance.new("TextLabel", MenuPage)
 kbHeader.Size = UDim2.new(1, -8, 0, 20)
 kbHeader.BackgroundTransparency = 1
@@ -3453,9 +3465,7 @@ M.SearchBar:GetPropertyChangedSignal("Text"):Connect(function()
     end
 end)
 
---=====================================================================
 -- UNLOAD
---=====================================================================
 function U.UNLOAD()
     pcall(function() UIS.MouseBehavior = Enum.MouseBehavior.Default end)
     U.disconnectAll()
@@ -3495,9 +3505,7 @@ function U.UNLOAD()
 end
 getgenv().MixWare_UNLOAD = U.UNLOAD
 
---=====================================================================
--- AUTO-LOAD LAST CONFIG
---=====================================================================
+-- AUTO-LOAD
 task.spawn(function()
     task.wait(1)
     local lastName = U.getLastConfigName()
@@ -3518,9 +3526,7 @@ task.spawn(function()
     end
 end)
 
---=====================================================================
 -- MAIN LOOP
---=====================================================================
 U.addConn(RunService.RenderStepped:Connect(function()
     if Settings.ESP.Enabled then U.drawESP()
     else for _, d in pairs(M.ESPData) do U.hideAllESP(d) end end
@@ -3586,4 +3592,4 @@ do
     end)
 end
 
-U.notify("MixWare.lol v2.8.5 loaded!" .. (M.IsMobile and " [MOBILE]" or ""), Theme.Accent)
+U.notify("MixWare.lol v2.8.6 loaded!" .. (M.IsMobile and " [MOBILE]" or ""), Theme.Accent)
