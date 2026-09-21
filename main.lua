@@ -1,3 +1,4 @@
+
 --[[
     MixWare.lol v2.8.7
     Combat → AimBot | Trigger
@@ -29,6 +30,7 @@ local Drawing = Drawing or setmetatable({}, {
     end end
 })
 
+local injectedMouse1Click = mouse1click
 local mouse1click = mouse1click or function() end
 local RunService = cloneref(game:GetService("RunService"))
 local Players = cloneref(game:GetService("Players"))
@@ -180,13 +182,18 @@ function U.isAimKeyDown()
     return false
 end
 
+M.VisibilityRayParams = RaycastParams.new()
+M.VisibilityRayParams.FilterType = Enum.RaycastFilterType.Exclude
+M.VisibilityRayParams.IgnoreWater = true
+M.VisibilityFilter = {nil, Camera}
+
 function U.isVisibleFromCam(part, targetModel)
     if not part then return false end
-    local p = RaycastParams.new()
-    p.FilterType = Enum.RaycastFilterType.Exclude
-    p.FilterDescendantsInstances = { LocalPlayer.Character, Camera }
-    p.IgnoreWater = true
-    local res = Workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, p)
+    M.VisibilityFilter[1] = LocalPlayer.Character
+    M.VisibilityFilter[2] = Camera
+    M.VisibilityRayParams.FilterDescendantsInstances = M.VisibilityFilter
+    local camPos = Camera.CFrame.Position
+    local res = Workspace:Raycast(camPos, part.Position - camPos, M.VisibilityRayParams)
     if not res or not res.Instance then return true end
     if targetModel and res.Instance:IsDescendantOf(targetModel) then return true end
     if res.Instance == part then return true end
@@ -990,16 +997,15 @@ end
 function U.hideCrosshair()
     local cp = M.CrosshairParts
     if not cp then return end
-    for k, obj in pairs(cp) do
-        if type(obj) == "table" then
-            for _, o in pairs(obj) do pcall(function() o.Visible = false end) end
-        else pcall(function() obj.Visible = false end) end
-    end
+    cp.line1.Visible=false; cp.line2.Visible=false; cp.line3.Visible=false; cp.line4.Visible=false
+    cp.dot.Visible=false; cp.circle.Visible=false
+    cp.o1.Visible=false; cp.o2.Visible=false; cp.o3.Visible=false; cp.o4.Visible=false
+    for i=1,8 do cp.sunLines[i].Visible=false end
 end
 
 function U.getCrosshairColor()
     if not Settings.Crosshair.Rainbow then return Settings.Crosshair.Color end
-    return Color3.fromHSV((tick() * 0.3) % 1, 1, 1)
+    return Color3.fromHSV((os.clock() * 0.3) % 1, 1, 1)
 end
 
 function U.drawCrosshair()
@@ -1040,7 +1046,7 @@ function U.drawCrosshair()
         cp.circle.Thickness = thick; cp.circle.NumSides = 32
         cp.circle.Color = color; cp.circle.Filled = false
         cp.circle.Transparency = 0; cp.circle.Visible = true
-        if c.Dot then
+        if c.Dot or c.Style == "Dot" then
             cp.dot.Size = Vector2.new(c.DotSize, c.DotSize)
             cp.dot.Position = Vector2.new(center.X - c.DotSize/2, center.Y - c.DotSize/2)
             cp.dot.Color = color; cp.dot.Filled = true; cp.dot.Visible = true
@@ -1074,7 +1080,7 @@ function U.drawCrosshair()
         cp.circle.Transparency = 0; cp.circle.Visible = true
     end
 
-    if c.Dot then
+    if c.Dot or c.Style == "Dot" then
         local s = c.DotSize
         cp.dot.Size = Vector2.new(s, s)
         cp.dot.Position = Vector2.new(center.X-s/2, center.Y-s/2)
@@ -1914,45 +1920,56 @@ end
 -- TRIGGERBOT
 --=====================================================================
 M.LastTrigger = 0
+M.TriggerBusy = false
+
+function U.fireTriggerClick(center)
+    if M.TriggerBusy then return false end
+    M.TriggerBusy = true
+    local fired = false
+    if type(injectedMouse1Click) == "function" then
+        fired = pcall(injectedMouse1Click)
+    end
+    if not fired and VirtualInputManager then
+        fired = pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 1)
+            VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 1)
+        end)
+    end
+    M.TriggerBusy = false
+    return fired
+end
+
 function U.updateTrigger()
-    if not Settings.Trigger.Enabled then return end
-    if Settings.Trigger.OnlyAimKey and not U.isAimKeyDown() then return end
-    if tick() - M.LastTrigger < Settings.Trigger.Delay then return end
+    local cfg = Settings.Trigger
+    if not cfg.Enabled or M.TriggerBusy then return end
+    if cfg.OnlyAimKey and not U.isAimKeyDown() then return end
+    local now = os.clock()
+    if now - M.LastTrigger < math.max(0, cfg.Delay) then return end
     local center = U.getFOVOrigin()
     local myTeam = LocalPlayer.Team
+    local bestPart, bestModel, bestDist = nil, nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local skip = false
-            if Settings.Trigger.TeamCheck and plr.Team == myTeam and myTeam ~= nil then skip = true end
-            if not skip then
-                local model, part = U.resolveAimTarget(plr)
-                if model and part then
-                    local hum = model:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 then
-                        local sp, on = U.worldToScreen(part.CFrame.Position)
-                        if on then
-                            local d = (sp - center).Magnitude
-                            if d <= Settings.Aim.FOV then
-                                if (not Settings.Trigger.WallCheck) or U.isVisibleFromCam(part, model) then
-                                    M.LastTrigger = tick()
-                                    pcall(function() mouse1click() end)
-                                    pcall(function()
-                                        VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 1)
-                                        task.wait(0.02)
-                                        VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 1)
-                                    end)
-                                    if Settings.Sound.KillSound then U.playSound(Settings.Sound.KillSoundId) end
-                                    return
-                                end
-                            end
+        if plr ~= LocalPlayer and not (cfg.TeamCheck and myTeam ~= nil and plr.Team == myTeam) then
+            local model, part = U.resolveAimTarget(plr)
+            if model and part then
+                local hum = model:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 then
+                    local sp, onScreen = U.worldToScreen(part.Position)
+                    if onScreen then
+                        local dist = (sp - center).Magnitude
+                        if dist <= Settings.Aim.FOV and dist < bestDist and (not cfg.WallCheck or U.isVisibleFromCam(part, model)) then
+                            bestDist, bestPart, bestModel = dist, part, model
                         end
                     end
                 end
             end
         end
     end
+    if bestPart and bestModel and U.fireTriggerClick(center) then
+        M.LastTrigger = now
+        if Settings.Sound.KillSound then U.playSound(Settings.Sound.KillSoundId) end
+    end
 end
-
 --=====================================================================
 -- GUI
 --=====================================================================
