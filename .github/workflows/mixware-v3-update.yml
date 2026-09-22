@@ -1,0 +1,73 @@
+name: MixWare V3.0.0 update
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update-main:
+    if: github.event.head_commit.message != 'chore: apply MixWare V3.0.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply V3.0.0 combat changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('main.lua')
+          s = p.read_text(encoding='utf-8')
+          if 'BUILD: 3.0.0' in s and 'local CombatMiscPage = subBtn("Misc")' in s and 'function U.updateNoRecoil()' in s:
+              print('Already updated')
+              raise SystemExit(0)
+
+          s = s.replace('BUILD: 2.9.0', 'BUILD: 3.0.0', 1)
+          s = s.replace('MixWare.lol v2.9.0', 'MixWare.lol v3.0.0', 1)
+          s = s.replace('Combat → AimBot | Trigger', 'Combat → AimBot | Trigger | Misc', 1)
+          old = '''    Новое в 2.9.0:\n      - FIX: MouseBehavior больше не залипает (early-return + Freecam check + страховка)\n      - FIX: LeftAlt — аварийный сброс мыши\n      - FIX: newDrawing проверяет поддержку Visible и падает в заглушку\n      - FIX: drawArrow использует Square если Triangle не работает\n      - FIX: UNLOAD корректно сбрасывает мышь\n'''
+          new = '''    Новое в 3.0.0:\n      - Combat Misc: Head Mover, Hitbox Expander и No Recoil собраны в отдельной вкладке\n      - No Recoil: camera compensation с настройками силы, окна и режима стрельбы\n      - Changelog обновлён до V3.0.0\n      - Старые config paths для Head Mover/Hitbox Expander сохранены для совместимости\n'''
+          s = s.replace(old, new, 1)
+
+          s = s.replace('''    Misc = {\n        TPWalkEnabled=false, TPWalkSpeed=20, InfJump=false, WalkSpeed=16, JumpPower=50, AntiFling=false,\n        FreecamEnabled=false, FreecamKey=Enum.KeyCode.K, FreecamSpeed=1.5,\n    },''', '''    Misc = {\n        TPWalkEnabled=false, TPWalkSpeed=20, InfJump=false, WalkSpeed=16, JumpPower=50, AntiFling=false,\n        FreecamEnabled=false, FreecamKey=Enum.KeyCode.K, FreecamSpeed=1.5,\n        NoRecoil=false, NoRecoilStrength=1.0, NoRecoilWindow=0.12, NoRecoilOnlyFiring=true,\n    },''', 1)
+
+          marker = '''--=====================================================================\n-- GUI\n--====================================================================='''
+          insert = r'''--=====================================================================\n-- NO RECOIL\n--=====================================================================\nM.NoRecoil = {ToolConnections = {}, BoundTools = {}, ActiveUntil = 0, BasePitch = nil, LastPitch = nil}\n\nfunction U.clearNoRecoilBindings()\n    for tool, conn in pairs(M.NoRecoil.ToolConnections) do\n        pcall(function() conn:Disconnect() end)\n        M.NoRecoil.ToolConnections[tool] = nil\n    end\n    M.NoRecoil.BoundTools = {}\nend\n\nfunction U.bindNoRecoilTool(tool)\n    if not tool or not tool:IsA("Tool") or M.NoRecoil.BoundTools[tool] then return end\n    M.NoRecoil.BoundTools[tool] = true\n    local ok, conn = pcall(function()\n        return tool.Activated:Connect(function()\n            if not Settings.Misc.NoRecoil then return end\n            local rx = Camera.CFrame:ToOrientation()\n            M.NoRecoil.BasePitch = rx\n            M.NoRecoil.LastPitch = rx\n            M.NoRecoil.ActiveUntil = os.clock() + math.max(0.02, Settings.Misc.NoRecoilWindow)\n        end)\n    end)\n    if ok and conn then M.NoRecoil.ToolConnections[tool] = conn end\nend\n\nfunction U.refreshNoRecoilTools()\n    local ch = LocalPlayer.Character\n    if not ch then return end\n    for _, obj in ipairs(ch:GetChildren()) do\n        if obj:IsA("Tool") then U.bindNoRecoilTool(obj) end\n    end\n    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")\n    if backpack then\n        for _, obj in ipairs(backpack:GetChildren()) do\n            if obj:IsA("Tool") then U.bindNoRecoilTool(obj) end\n        end\n    end\nend\n\nfunction U.updateNoRecoil()\n    if not Settings.Misc.NoRecoil then\n        M.NoRecoil.ActiveUntil = 0\n        M.NoRecoil.BasePitch = nil\n        M.NoRecoil.LastPitch = nil\n        return\n    end\n    U.refreshNoRecoilTools()\n    local firing = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)\n    local now = os.clock()\n    if Settings.Misc.NoRecoilOnlyFiring and not firing and now >= M.NoRecoil.ActiveUntil then return end\n    if M.NoRecoil.BasePitch == nil then\n        local rx = Camera.CFrame:ToOrientation()\n        M.NoRecoil.BasePitch = rx\n        M.NoRecoil.LastPitch = rx\n    end\n    if now > M.NoRecoil.ActiveUntil and not firing then return end\n    local cf = Camera.CFrame\n    local rx, ry, rz = cf:ToOrientation()\n    local strength = math.clamp(Settings.Misc.NoRecoilStrength, 0, 1.5)\n    local correctedPitch = rx + (M.NoRecoil.BasePitch - rx) * strength\n    if M.NoRecoil.LastPitch then\n        local delta = rx - M.NoRecoil.LastPitch\n        if math.abs(delta) > math.rad(0.35) then correctedPitch = rx - delta * strength end\n    end\n    M.NoRecoil.LastPitch = correctedPitch\n    pcall(function() Camera.CFrame = CFrame.new(cf.Position) * CFrame.Angles(correctedPitch, ry, rz) end)\nend\n\n'''
+          s = s.replace(marker, insert + marker, 1)
+
+          s = s.replace('''catHeader("COMBAT")\nlocal AimPage = subBtn("AimBot")\nlocal TrgPage = subBtn("Trigger")\nSideY = SideY + 8''', '''catHeader("COMBAT")\nlocal AimPage = subBtn("AimBot")\nlocal TrgPage = subBtn("Trigger")\nlocal CombatMiscPage = subBtn("Misc")\nSideY = SideY + 8''', 1)
+
+          head = '''U.makeToggle(AimPage, "Head Mover (silent)", "Aim.HeadMover", function(v)\n    if v then U.startHeadMover() else U.stopHeadMover() end\nend)\nU.makeSlider(AimPage, "Head Mover Distance", 5, 200, "Aim.HeadMoverDistance")\nU.makeSlider(AimPage, "Head Mover Speed", 0.05, 1, "Aim.HeadMoverSpeed")\nU.makeToggle(AimPage, "Head Mover Only When Aiming", "Aim.HeadMoverOnlyAimKey")\n'''
+          s = s.replace(head, '', 1)
+
+          trg = '''U.makeToggle(TrgPage, "TriggerBot Enabled", "Trigger.Enabled")\nU.makeSlider(TrgPage, "Delay", 0.01, 1, "Trigger.Delay")\nU.makeToggle(TrgPage, "Team Check", "Trigger.TeamCheck")\nU.makeToggle(TrgPage, "Wall Check", "Trigger.WallCheck")\nU.makeToggle(TrgPage, "Only When Aim Key Down", "Trigger.OnlyAimKey")\n\n-- ENEMIES PAGE'''
+          combat = '''U.makeToggle(TrgPage, "TriggerBot Enabled", "Trigger.Enabled")\nU.makeSlider(TrgPage, "Delay", 0.01, 1, "Trigger.Delay")\nU.makeToggle(TrgPage, "Team Check", "Trigger.TeamCheck")\nU.makeToggle(TrgPage, "Wall Check", "Trigger.WallCheck")\nU.makeToggle(TrgPage, "Only When Aim Key Down", "Trigger.OnlyAimKey")\n\n-- COMBAT MISC PAGE\nU.makeToggle(CombatMiscPage, "Head Mover", "Aim.HeadMover", function(v)\n    if v then U.startHeadMover() else U.stopHeadMover() end\nend)\nU.makeSlider(CombatMiscPage, "Head Mover Distance", 5, 200, "Aim.HeadMoverDistance")\nU.makeSlider(CombatMiscPage, "Head Mover Speed", 0.05, 1, "Aim.HeadMoverSpeed")\nU.makeToggle(CombatMiscPage, "Head Mover Only When Aiming", "Aim.HeadMoverOnlyAimKey")\nU.makeToggle(CombatMiscPage, "Hitbox Expander", "ESP.HitboxExpander")\nU.makeSlider(CombatMiscPage, "Hitbox Size", 2, 30, "ESP.HitboxSize")\nU.makeSlider(CombatMiscPage, "Hitbox Transparency", 0, 1, "ESP.HitboxTransparency")\nU.makeDropdown(CombatMiscPage, "Hitbox Parts", {"Head","Root","Head+Root"}, "ESP.HitboxParts")\nU.makeToggle(CombatMiscPage, "Hitbox Team Check", "ESP.HitboxTeamCheck")\nU.makeToggle(CombatMiscPage, "No Recoil", "Misc.NoRecoil")\nU.makeSlider(CombatMiscPage, "No Recoil Strength", 0, 1.5, "Misc.NoRecoilStrength")\nU.makeSlider(CombatMiscPage, "No Recoil Window", 0.02, 0.5, "Misc.NoRecoilWindow")\nU.makeToggle(CombatMiscPage, "No Recoil Only While Firing", "Misc.NoRecoilOnlyFiring")\n\n-- ENEMIES PAGE'''
+          if trg not in s: raise SystemExit('Trigger UI marker not found')
+          s = s.replace(trg, combat, 1)
+
+          for line in [
+              'U.makeSlider(EnemiesPage, "Hitbox Size", 2, 20, "ESP.HitboxSize")\n',
+              'U.makeSlider(EnemiesPage, "Hitbox Transparency", 0, 1, "ESP.HitboxTransparency")\n',
+              'U.makeDropdown(EnemiesPage, "Hitbox Parts", {"Head","Root","Head+Root"}, "ESP.HitboxParts")\n',
+              'U.makeToggle(EnemiesPage, "Hitbox Team Check", "ESP.HitboxTeamCheck")\n']:
+              s = s.replace(line, '', 1)
+
+          s = s.replace('''    U.updateHitboxExpander()\n    U.drawCrosshair()''', '''    U.updateHitboxExpander()\n    U.updateNoRecoil()\n    U.drawCrosshair()''', 1)
+          s = s.replace('''    U.stopHeadMover()\n    U.stopFreecam()''', '''    U.stopHeadMover()\n    U.clearNoRecoilBindings()\n    U.stopFreecam()''', 1)
+          s = s.replace('MixWare.lol  •  v2.9.0', 'MixWare.lol  •  v3.0.0')
+          s = s.replace('MixWare.lol v2.9.0 loaded!', 'MixWare.lol v3.0.0 loaded!')
+          s = s.replace('v2.9.0', 'v3.0.0')
+          p.write_text(s, encoding='utf-8')
+          print('Applied V3.0.0 changes')
+          PY
+      - name: Commit changes and remove updater
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/mixware-v3-update.yml
+          git add main.lua .github/workflows/mixware-v3-update.yml
+          git commit -m "chore: apply MixWare V3.0.0"
+          git push
