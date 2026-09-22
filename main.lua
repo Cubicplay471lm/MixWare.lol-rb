@@ -1,10 +1,11 @@
 --[[
-    MixWare.lol v2.8.7
+    BUILD: 2.9.0
+    MixWare.lol v2.9.0
     Combat → AimBot | Trigger
     Visuals → Enemies | Items | Inventory | World | Crosshair
     Misc → Misc | Config | Menu
 
-    Новое в 2.8.7:
+    Новое в 2.9.0:
       - FIX: MouseBehavior больше не залипает (early-return + Freecam check + страховка)
       - FIX: LeftAlt — аварийный сброс мыши
       - FIX: newDrawing проверяет поддержку Visible и падает в заглушку
@@ -2133,7 +2134,7 @@ do
             local time = os.date("%H:%M:%S")
             local pc = #Players:GetPlayers()
             wt.Text = string.format(
-                "  MixWare.lol v2.8.7   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
+                "  MixWare.lol v2.9.0   |   Config: %s   |   %s   |   FPS %d   |   Ping %d   |   Players %d",
                 M.ActiveConfigName, time, fps, ping, pc)
             task.wait(0.5)
         end
@@ -2724,7 +2725,7 @@ TitleGrad.Color = ColorSequence.new({
 M.Title = Instance.new("TextLabel", M.TitleBar)
 M.Title.Size = UDim2.new(1, -80, 1, 0); M.Title.Position = UDim2.new(0, 14, 0, 0)
 M.Title.BackgroundTransparency = 1
-M.Title.Text = "MixWare.lol  •  v2.8.7"
+M.Title.Text = "MixWare.lol  •  v2.9.0"
 M.Title.TextColor3 = Theme.Text
 M.Title.Font = Enum.Font.GothamBold
 M.Title.TextSize = 13
@@ -3729,4 +3730,4 @@ do
     end)
 end
 
-U.notify("MixWare.lol v2.8.7 loaded! LeftAlt = mouse reset", Theme.Accent)
+U.notify("MixWare.lol v2.9.0 loaded! LeftAlt = mouse reset", Theme.Accent)
