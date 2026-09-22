@@ -1,4 +1,3 @@
-
 --[[
     MixWare.lol v2.8.7
     Combat → AimBot | Trigger
@@ -102,6 +101,7 @@ local Settings = {
         ArrowsEnabled=false, ArrowsColor=Color3.fromRGB(200,130,255), ArrowsSize=14,
         WeaponNameEnabled=false, WeaponNameColor=Color3.fromRGB(255,180,220), WeaponNameSize=12,
         DistanceFade=false, DistanceFadeStart=0.7,
+        HitboxExpander=false, HitboxSize=8, HitboxTransparency=0.75, HitboxParts="Head+Root", HitboxTeamCheck=true,
     },
     Crosshair = {Enabled=false,Style="Cross",Color=Color3.fromRGB(255,255,255),OutlineColor=Color3.fromRGB(0,0,0),Gap=4,Length=8,Thickness=1,Dot=true,DotSize=2,CircleRadius=12,Outline=true,Rainbow=false},
     ItemESP = {Enabled=false,Color=Color3.fromRGB(220,180,100),MaxDistance=500,TextEnabled=true,RefreshRate=0.2,SelectedItems={}},
@@ -148,9 +148,10 @@ local Settings = {
     UI = {
         Open=true, MenuKey=Enum.KeyCode.RightShift, UnloadKey=Enum.KeyCode.End,
         Watermark=true, Notifications=true, Theme="Purple", Scale="Medium",
-        WatermarkX=0.01, WatermarkY=0.02,
-        InventoryX=0.72, InventoryY=0.25,
-        DragHoldTime=0.7,
+        WatermarkX=0.01, WatermarkY=0.02, WatermarkScale=1.0,
+        InventoryX=0.72, InventoryY=0.25, InventoryScale=1.0,
+        MenuSize=1.0,
+        DragHoldTime=0.7, AutoScale=true,
     },
 }
 M.Settings = Settings
@@ -1971,6 +1972,86 @@ function U.updateTrigger()
     end
 end
 --=====================================================================
+-- HITBOX EXPANDER
+--=====================================================================
+M.HitboxOriginals = {}
+
+function U.restoreHitboxes()
+    for part, data in pairs(M.HitboxOriginals) do
+        if part and part.Parent then
+            pcall(function()
+                part.Size = data.Size
+                part.Transparency = data.Transparency
+                part.CanCollide = data.CanCollide
+                part.CanTouch = data.CanTouch
+                part.CanQuery = data.CanQuery
+            end)
+        end
+    end
+    M.HitboxOriginals = {}
+end
+
+function U.shouldExpandHitbox(plr)
+    if plr == LocalPlayer then return false end
+    if Settings.ESP.HitboxTeamCheck and LocalPlayer.Team ~= nil and plr.Team == LocalPlayer.Team then return false end
+    return true
+end
+
+function U.applyHitboxPart(part, size, transparency)
+    if not part or not part:IsA("BasePart") then return end
+    if not M.HitboxOriginals[part] then
+        M.HitboxOriginals[part] = {
+            Size = part.Size, Transparency = part.Transparency,
+            CanCollide = part.CanCollide, CanTouch = part.CanTouch, CanQuery = part.CanQuery,
+        }
+    end
+    pcall(function()
+        part.Size = Vector3.new(size, size, size)
+        part.Transparency = math.clamp(transparency, 0, 1)
+        part.CanCollide = false
+        part.CanTouch = true
+        part.CanQuery = true
+    end)
+end
+
+function U.updateHitboxExpander()
+    if not Settings.ESP.HitboxExpander then
+        if next(M.HitboxOriginals) then U.restoreHitboxes() end
+        return
+    end
+    local wanted = {}
+    local size = math.max(1, Settings.ESP.HitboxSize)
+    local transp = math.clamp(Settings.ESP.HitboxTransparency, 0, 1)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if U.shouldExpandHitbox(plr) then
+            local ch = plr.Character
+            if ch then
+                if Settings.ESP.HitboxParts == "Head" or Settings.ESP.HitboxParts == "Head+Root" then
+                    local head = ch:FindFirstChild("Head")
+                    if head and head:IsA("BasePart") then wanted[head] = true; U.applyHitboxPart(head, size, transp) end
+                end
+                if Settings.ESP.HitboxParts == "Root" or Settings.ESP.HitboxParts == "Head+Root" then
+                    local root = ch:FindFirstChild("HumanoidRootPart")
+                    if root and root:IsA("BasePart") then wanted[root] = true; U.applyHitboxPart(root, size, transp) end
+                end
+            end
+        end
+    end
+    for part in pairs(M.HitboxOriginals) do
+        if not wanted[part] or not part.Parent then
+            local data = M.HitboxOriginals[part]
+            if part and part.Parent and data then
+                pcall(function()
+                    part.Size=data.Size; part.Transparency=data.Transparency
+                    part.CanCollide=data.CanCollide; part.CanTouch=data.CanTouch; part.CanQuery=data.CanQuery
+                end)
+            end
+            M.HitboxOriginals[part] = nil
+        end
+    end
+end
+
+--=====================================================================
 -- GUI
 --=====================================================================
 local parentGui = (function()
@@ -1988,6 +2069,28 @@ ScreenGui.Parent = parentGui
 M.ScreenGui = ScreenGui
 
 U.setupNotifyHolder(ScreenGui)
+
+-- UNIVERSAL PANEL DRAG
+local function makePanelDraggable(frame)
+    if not frame or not frame:IsA("GuiObject") then return end
+    frame.Active = true
+    local dragging=false
+    local dragStart,startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; dragStart=input.Position; startPos=frame.Position
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType~=Enum.UserInputType.MouseMovement and input.UserInputType~=Enum.UserInputType.Touch then return end
+        local d=input.Position-dragStart
+        frame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=false end
+    end)
+end
 
 -- WATERMARK
 do
@@ -2013,8 +2116,12 @@ do
     wt.TextSize = 12
     wt.TextXAlignment = Enum.TextXAlignment.Left
     wt.AutomaticSize = Enum.AutomaticSize.X
+    local wmScale = Instance.new("UIScale", wm)
+    wmScale.Scale = Settings.UI.WatermarkScale
+    M.WatermarkScale = wmScale
     M.Watermark = wm
     M.WatermarkText = wt
+    makePanelDraggable(wm)
 
     task.spawn(function()
         while ScreenGui.Parent do
@@ -2045,6 +2152,9 @@ M.InvPanel.BorderSizePixel = 0
 M.InvPanel.Active = true
 M.InvPanel.Visible = false
 Instance.new("UICorner", M.InvPanel).CornerRadius = UDim.new(0, 10)
+M.InvScale = Instance.new("UIScale", M.InvPanel)
+M.InvScale.Scale = Settings.UI.InventoryScale
+makePanelDraggable(M.InvPanel)
 local InvStroke = Instance.new("UIStroke", M.InvPanel)
 InvStroke.Color = Theme.Accent; InvStroke.Thickness = 1; InvStroke.Transparency = 0.3
 
@@ -2218,98 +2328,21 @@ M.MobileButtonActive = false
 M.MobileAimBtn = nil
 
 function U.createMobileAimButton()
-    if M.MobileAimBtn then return end
-    if not M.IsMobile then return end
-    if not Settings.Aim.MobileButtonShow then return end
-
+    if M.MobileAimBtn or not M.IsMobile or not Settings.Aim.MobileButtonShow then return end
     local btn = Instance.new("TextButton", ScreenGui)
-    btn.Size = UDim2.new(0, 80, 0, 80)
+    btn.Size = UDim2.new(0, 64, 0, 64)
     btn.Position = UDim2.new(Settings.Aim.MobileButtonX, 0, Settings.Aim.MobileButtonY, 0)
-    btn.BackgroundColor3 = Theme.Bad
-    btn.BackgroundTransparency = 0.2
-    btn.Text = "AIM"
-    btn.TextColor3 = Color3.new(1,1,1)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 16
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
+    btn.BackgroundColor3 = Theme.Bad; btn.BackgroundTransparency = 0.2
+    btn.Text = "AIM"; btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold; btn.TextSize = 14
+    btn.BorderSizePixel = 0; btn.AutoButtonColor = false
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
     local stroke = Instance.new("UIStroke", btn)
-    stroke.Color = Theme.Stroke
-    stroke.Thickness = 2
-
-    local lock = Instance.new("TextButton", btn)
-    lock.Size = UDim2.new(0, 20, 0, 20)
-    lock.Position = UDim2.new(1, -22, 0, 2)
-    lock.BackgroundColor3 = Theme.Panel
-    lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
-    lock.TextColor3 = Theme.Text
-    lock.Font = Enum.Font.GothamBold
-    lock.TextSize = 12
-    lock.BorderSizePixel = 0
-    Instance.new("UICorner", lock).CornerRadius = UDim.new(1, 0)
-
-    lock.MouseButton1Click:Connect(function()
-        Settings.Aim.MobileButtonLocked = not Settings.Aim.MobileButtonLocked
-        lock.Text = Settings.Aim.MobileButtonLocked and "🔒" or "🔓"
+    stroke.Color = Theme.Stroke; stroke.Thickness = 2
+    btn.MouseButton1Click:Connect(function()
+        M.MobileButtonActive = not M.MobileButtonActive
+        btn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
     end)
-
-    local holdStart = 0
-    local isDragging = false
-    local dragOffset = Vector2.zero
-
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            holdStart = tick()
-            isDragging = false
-            dragOffset = Vector2.new(input.Position.X, input.Position.Y) - btn.AbsolutePosition
-        end
-    end)
-
-    U.addConn(UIS.InputChanged:Connect(function(input)
-        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local parentAbs = btn.Parent and btn.Parent.AbsolutePosition or Vector2.zero
-            local parentSize = btn.Parent and btn.Parent.AbsoluteSize or Camera.ViewportSize
-            local relX = (input.Position.X - dragOffset.X - parentAbs.X) / parentSize.X
-            local relY = (input.Position.Y - dragOffset.Y - parentAbs.Y) / parentSize.Y
-            btn.Position = UDim2.new(relX, 0, relY, 0)
-            U.setPath("Aim.MobileButtonX", relX)
-            U.setPath("Aim.MobileButtonY", relY)
-        end
-    end))
-
-    U.addConn(UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local heldTime = tick() - holdStart
-            if isDragging then
-                isDragging = false
-            elseif heldTime < Settings.UI.DragHoldTime then
-                if not Settings.Aim.MobileButtonLocked then
-                    M.MobileButtonActive = not M.MobileButtonActive
-                    btn.BackgroundColor3 = M.MobileButtonActive and Theme.Good or Theme.Bad
-                end
-            end
-            holdStart = 0
-        end
-    end))
-
-    U.addConn(RunService.RenderStepped:Connect(function()
-        if holdStart > 0 and not isDragging and not Settings.Aim.MobileButtonLocked then
-            if tick() - holdStart >= Settings.UI.DragHoldTime then
-                local anyInput = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-                local anyTouch = #UIS:GetTouches() > 0
-                if anyInput or anyTouch then isDragging = true
-                else holdStart = 0 end
-            end
-        end
-        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and #UIS:GetTouches() == 0 then
-            holdStart = 0
-        end
-    end))
-
     M.MobileAimBtn = btn
 end
 
@@ -2625,6 +2658,34 @@ function U.makeDropdown(parent, text, options, path, cb)
 end
 
 --=====================================================================
+-- MOBILE MENU RESTORE
+--=====================================================================
+M.MobileMenuBtn = nil
+function U.createMobileMenuButton()
+    if not M.IsMobile or M.MobileMenuBtn then return end
+    local b = Instance.new("TextButton", ScreenGui)
+    b.Size = UDim2.new(0, 42, 0, 42)
+    b.Position = UDim2.new(0, 12, 1, -54)
+    b.BackgroundColor3 = Theme.Accent
+    b.BackgroundTransparency = 0.12
+    b.Text = "≡"
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 22
+    b.BorderSizePixel = 0
+    b.Visible = false
+    b.AutoButtonColor = false
+    Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+    makePanelDraggable(b)
+    b.MouseButton1Click:Connect(function()
+        Settings.UI.Open = true
+        M.Main.Visible = true
+        b.Visible = false
+    end)
+    M.MobileMenuBtn = b
+end
+
+--=====================================================================
 -- MAIN WINDOW
 --=====================================================================
 M.Main = Instance.new("Frame", ScreenGui)
@@ -2634,6 +2695,7 @@ M.Main.BackgroundColor3 = Theme.Bg
 M.Main.BorderSizePixel = 0
 M.Main.Active = true
 M.Main.Draggable = true
+M.MainScale = Instance.new("UIScale", M.Main)
 Instance.new("UICorner", M.Main).CornerRadius = UDim.new(0, 10)
 local MainGrad = Instance.new("UIGradient", M.Main)
 MainGrad.Color = ColorSequence.new({
@@ -2913,6 +2975,11 @@ U.makeColorPicker(EnemiesPage, "Weapon Name Color", "ESP.WeaponNameColor")
 U.makeSlider(EnemiesPage, "Weapon Name Size", 8, 20, "ESP.WeaponNameSize")
 U.makeToggle(EnemiesPage, "Distance Fade", "ESP.DistanceFade")
 U.makeSlider(EnemiesPage, "Fade Start %", 0.1, 1, "ESP.DistanceFadeStart")
+U.makeToggle(EnemiesPage, "Hitbox Expander", "ESP.HitboxExpander")
+U.makeSlider(EnemiesPage, "Hitbox Size", 2, 20, "ESP.HitboxSize")
+U.makeSlider(EnemiesPage, "Hitbox Transparency", 0, 1, "ESP.HitboxTransparency")
+U.makeDropdown(EnemiesPage, "Hitbox Parts", {"Head","Root","Head+Root"}, "ESP.HitboxParts")
+U.makeToggle(EnemiesPage, "Hitbox Team Check", "ESP.HitboxTeamCheck")
 
 -- CROSSHAIR PAGE
 U.makeToggle(CrosshairPage, "Crosshair Enabled", "Crosshair.Enabled")
@@ -3211,7 +3278,10 @@ function U.loadConfig(name, silent)
     if Settings.Misc.InfJump then U.setInfJump(true) else U.setInfJump(false) end
     if Settings.Aim.HeadMover then U.startHeadMover() else U.stopHeadMover() end
     M.InvPanel.Position = UDim2.new(Settings.UI.InventoryX, 0, Settings.UI.InventoryY, 0)
+    if M.InvScale then M.InvScale.Scale = Settings.UI.InventoryScale or 1 end
     M.Watermark.Position = UDim2.new(Settings.UI.WatermarkX, 0, Settings.UI.WatermarkY, 0)
+    if M.WatermarkScale then M.WatermarkScale.Scale = Settings.UI.WatermarkScale or 1 end
+    U.applyMenuSize(Settings.UI.MenuSize or 1)
     if M.MobileAimBtn then
         M.MobileAimBtn.Position = UDim2.new(Settings.Aim.MobileButtonX, 0, Settings.Aim.MobileButtonY, 0)
     end
@@ -3324,6 +3394,10 @@ U.rebuildConfigList()
 U.makeToggle(MenuPage, "Watermark", "UI.Watermark", function(v) M.Watermark.Visible = v end)
 U.makeToggle(MenuPage, "Notifications", "UI.Notifications")
 U.makeSlider(MenuPage, "Drag Hold Time", 0.3, 2, "UI.DragHoldTime")
+U.makeToggle(MenuPage, "Auto Menu Scale", "UI.AutoScale", function(v) U.updateAutoMenuScale() end)
+U.makeSlider(MenuPage, "Menu Size", 0.70, 1.40, "UI.MenuSize", function(v) U.applyMenuSize(v) end)
+U.makeSlider(MenuPage, "Watermark Size", 0.70, 1.50, "UI.WatermarkScale", function(v) if M.WatermarkScale then M.WatermarkScale.Scale = v end end)
+U.makeSlider(MenuPage, "Inventory ESP Size", 0.70, 1.50, "UI.InventoryScale", function(v) if M.InvScale then M.InvScale.Scale = v end end)
 
 do
     local themeRow = U.makeRow(MenuPage, 32)
@@ -3392,12 +3466,30 @@ function U.applyTheme(name)
     if activeName then U.selectTab(activeName) end
 end
 
+function U.getAutoMenuScale()
+    local cam=Workspace.CurrentCamera
+    if not cam then return 1 end
+    local vp=cam.ViewportSize
+    return math.clamp(math.min(vp.X/760,vp.Y/500),0.55,1)
+end
+function U.applyMenuSize(v)
+    v=math.clamp(tonumber(v) or 1,0.70,1.40); Settings.UI.MenuSize=v
+    local total=U.getAutoMenuScale()*v
+    if M.MainScale then M.MainScale.Scale=total end
+    M.Main.Position=UDim2.new(0.5,-350*total,0.5,-220*total)
+end
+function U.updateAutoMenuScale()
+    if not M.Main then return end
+    local total=U.getAutoMenuScale()*(Settings.UI.MenuSize or 1)
+    if M.MainScale then M.MainScale.Scale=total end
+    M.Main.Position=UDim2.new(0.5,-350*total,0.5,-220*total)
+end
+
 function U.applyScale(name)
-    local s = scaleValues[name] or 1.0
-    Settings.UI.Scale = name
-    M.ScaleBtn.Text = name
-    M.Main.Size = UDim2.new(0, 700 * s, 0, 440 * s)
-    M.Main.Position = UDim2.new(0.5, -350 * s, 0.5, -220 * s)
+    local s=scaleValues[name] or 1.0; Settings.UI.Scale=name; M.ScaleBtn.Text=name
+    local total=U.getAutoMenuScale()*s*(Settings.UI.MenuSize or 1)
+    if M.MainScale then M.MainScale.Scale=total end
+    M.Main.Position=UDim2.new(0.5,-350*total,0.5,-220*total)
 end
 
 M.ThemeBtn.MouseButton1Click:Connect(function()
@@ -3497,6 +3589,7 @@ function U.UNLOAD()
     if M.AntiFlingConn then M.AntiFlingConn:Disconnect(); M.AntiFlingConn = nil end
     U.stopHeadMover()
     U.stopFreecam()
+    U.restoreHitboxes()
     U.clearLocalMaterial()
     if M.WorldBackup then
         local o = M.OriginalLighting
@@ -3554,6 +3647,7 @@ U.addConn(RunService.RenderStepped:Connect(function()
     else for _, d in pairs(M.ESPData) do U.hideAllESP(d) end end
 
     U.updateChamsAll()
+    U.updateHitboxExpander()
     U.drawCrosshair()
     U.drawTargetLine()
 
@@ -3600,6 +3694,7 @@ U.addConn(UIS.InputBegan:Connect(function(input, gpe)
     if input.KeyCode == Settings.UI.MenuKey then
         Settings.UI.Open = not Settings.UI.Open
         M.Main.Visible = Settings.UI.Open
+        if M.MobileMenuBtn then M.MobileMenuBtn.Visible = not Settings.UI.Open and M.IsMobile end
     elseif input.KeyCode == Settings.UI.UnloadKey then
         U.UNLOAD()
     elseif input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -3623,24 +3718,14 @@ end))
 
 -- MIN / CLOSE
 do
-    local minimized = false
-    local savedSize = M.Main.Size
+    U.createMobileMenuButton()
     M.MinBtn.MouseButton1Click:Connect(function()
-        minimized = not minimized
-        if minimized then
-            savedSize = M.Main.Size
-            M.Main.Size = UDim2.new(0, 700, 0, 34)
-            M.ContentHolder.Visible = false
-            M.SearchBar.Visible = false
-        else
-            M.Main.Size = savedSize
-            M.ContentHolder.Visible = true
-            M.SearchBar.Visible = true
-        end
-    end)
-    M.CloseBtn.MouseButton1Click:Connect(function()
         Settings.UI.Open = false
         M.Main.Visible = false
+        if M.MobileMenuBtn then M.MobileMenuBtn.Visible = M.IsMobile end
+    end)
+    M.CloseBtn.MouseButton1Click:Connect(function()
+        U.UNLOAD()
     end)
 end
 
