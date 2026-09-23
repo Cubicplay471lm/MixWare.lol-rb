@@ -1,0 +1,69 @@
+name: MixWare modularize V3.0.0
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  modularize:
+    if: github.event.head_commit.message != 'chore: modularize MixWare V3.0.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Split main.lua into modules
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          src = Path('main.lua').read_text(encoding='utf-8')
+          lines = src.splitlines(True)
+          ranges = {
+              'modules/core/Core.lua': (1, 422),
+              'modules/visuals/ESP.lua': (423, 984),
+              'modules/visuals/Crosshair.lua': (985, 1095),
+              'modules/combat/Aimbot.lua': (1096, 1511),
+              'modules/visuals/ItemESP.lua': (1512, 1645),
+              'modules/visuals/WorldESP.lua': (1646, 1812),
+              'modules/misc/Freecam.lua': (1813, 1880),
+              'modules/combat/HeadMover.lua': (1881, 1923),
+              'modules/combat/TriggerBot.lua': (1924, 1977),
+              'modules/combat/HitboxExpander.lua': (1978, 2056),
+              'modules/ui/UI.lua': (2057, len(lines)),
+          }
+          common = '''return function(ctx)\n    local M, U, Settings, Theme = ctx.M, ctx.U, ctx.Settings, ctx.Theme\n    local cloneref, gethui, protect_gui, getgenv = ctx.cloneref, ctx.gethui, ctx.protect_gui, ctx.getgenv\n    local Drawing = ctx.Drawing\n    local RunService, Players, UIS, Workspace, Lighting, HttpService, Stats, SoundService, VirtualInputManager = ctx.RunService, ctx.Players, ctx.UIS, ctx.Workspace, ctx.Lighting, ctx.HttpService, ctx.Stats, ctx.SoundService, ctx.VirtualInputManager\n    local LocalPlayer, Camera = ctx.LocalPlayer, ctx.Camera\n'''
+          for path, (a, b) in ranges.items():
+              body = ''.join(lines[a-1:b])
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              if path.endswith('core/Core.lua'):
+                  marker = '\n--=====================================================================\n-- УТИЛИТЫ'
+                  inject = '''\nctx.M, ctx.U, ctx.Settings, ctx.Theme = M, U, Settings, Theme\nctx.cloneref, ctx.gethui, ctx.protect_gui, ctx.getgenv = cloneref, gethui, protect_gui, getgenv\nctx.Drawing = Drawing\nctx.RunService, ctx.Players, ctx.UIS, ctx.Workspace, ctx.Lighting, ctx.HttpService, ctx.Stats, ctx.SoundService, ctx.VirtualInputManager = RunService, Players, UIS, Workspace, Lighting, HttpService, Stats, SoundService, VirtualInputManager\nctx.LocalPlayer, ctx.Camera = LocalPlayer, Camera\n'''
+                  body = body.replace(marker, inject + marker, 1)
+                  text = 'return function(ctx)\n' + body + '\nend\n'
+              else:
+                  text = common + body + '\nend\n'
+              p.write_text(text, encoding='utf-8')
+          main = '''--[[\n    BUILD: 3.0.0\n    MixWare.lol v3.0.0\n    Modular build\n\n    modules/\n      core/Core.lua\n      combat/Aimbot.lua\n      combat/HeadMover.lua\n      combat/TriggerBot.lua\n      combat/HitboxExpander.lua\n      visuals/ESP.lua\n      visuals/Crosshair.lua\n      visuals/ItemESP.lua\n      visuals/WorldESP.lua\n      misc/Freecam.lua\n      ui/UI.lua\n--]]\nlocal BASE = "https://raw.githubusercontent.com/Cubicplay471lm/MixWare.lol-rb/main/"\nlocal ctx = {}\nlocal function loadModule(path)\n    local src = game:HttpGet(BASE .. path)\n    local chunk = assert(loadstring(src), "MixWare module failed to compile: " .. path)\n    local init = chunk()\n    assert(type(init) == "function", "MixWare module invalid: " .. path)\n    init(ctx)\nend\nloadModule("modules/core/Core.lua")\nloadModule("modules/visuals/ESP.lua")\nloadModule("modules/visuals/Crosshair.lua")\nloadModule("modules/combat/Aimbot.lua")\nloadModule("modules/visuals/ItemESP.lua")\nloadModule("modules/visuals/WorldESP.lua")\nloadModule("modules/misc/Freecam.lua")\nloadModule("modules/combat/HeadMover.lua")\nloadModule("modules/combat/TriggerBot.lua")\nloadModule("modules/combat/HitboxExpander.lua")\nloadModule("modules/ui/UI.lua")\n'''
+          Path('main.lua').write_text(main, encoding='utf-8')
+          core = Path('modules/core/Core.lua')
+          s = core.read_text(encoding='utf-8')
+          s = s.replace('BUILD: 2.9.0', 'BUILD: 3.0.0', 1)
+          s = s.replace('MixWare.lol v2.9.0', 'MixWare.lol v3.0.0', 1)
+          old = '''    Новое в 2.9.0:\n      - FIX: MouseBehavior больше не залипает (early-return + Freecam check + страховка)\n      - FIX: LeftAlt — аварийный сброс мыши\n      - FIX: newDrawing проверяет поддержку Visible и падает в заглушку\n      - FIX: drawArrow использует Square если Triangle не работает\n      - FIX: UNLOAD корректно сбрасывает мышь\n'''
+          new = '''    Новое в 3.0.0:\n      - Modular architecture: combat / visuals / UI / misc вынесены в отдельные файлы\n      - main.lua теперь является лёгким загрузчиком модулей\n      - Функционал 2.9.0 сохранён без изменения логики\n      - Структура проекта зафиксирована для следующих обновлений\n'''
+          s = s.replace(old, new, 1)
+          core.write_text(s, encoding='utf-8')
+          ui = Path('modules/ui/UI.lua')
+          ui.write_text(ui.read_text(encoding='utf-8').replace('v2.9.0', 'v3.0.0'), encoding='utf-8')
+          Path('MODULES.md').write_text('''# MixWare.lol V3.0.0 — module map\n\n`main.lua` is the only entry point.\n\n## Core\n- `modules/core/Core.lua` — API, settings, themes, utilities, notifications, shared state.\n\n## Combat\n- `modules/combat/Aimbot.lua` — aimbot, target selection, FOV and target visuals.\n- `modules/combat/HeadMover.lua` — Head Mover.\n- `modules/combat/TriggerBot.lua` — TriggerBot.\n- `modules/combat/HitboxExpander.lua` — Hitbox Expander.\n\n## Visuals\n- `modules/visuals/ESP.lua` — player ESP, chams, boxes, skeletons, tracers, names, health and arrows.\n- `modules/visuals/Crosshair.lua` — crosshair.\n- `modules/visuals/ItemESP.lua` — item ESP.\n- `modules/visuals/WorldESP.lua` — world visuals.\n\n## Misc\n- `modules/misc/Freecam.lua` — freecam.\n\n## UI\n- `modules/ui/UI.lua` — window, watermark, inventory panel, mobile button, controls, pages, config/menu UI and unload.\n\nKeep this map updated whenever a feature moves. `main.lua` stays the entry point.\n''', encoding='utf-8')
+          PY
+      - name: Commit modular structure
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/mixware-v3-update.yml .github/workflows/modularize.yml
+          git add main.lua modules MODULES.md .github/workflows/mixware-v3-update.yml .github/workflows/modularize.yml
+          git commit -m "chore: modularize MixWare V3.0.0"
+          git push
