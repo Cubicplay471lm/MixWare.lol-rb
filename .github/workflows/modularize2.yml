@@ -1,0 +1,65 @@
+name: MixWare modularize V3.0.0
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  modularize:
+    if: github.event.head_commit.message != 'chore: modularize MixWare V3.0.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = 'main';
+            const getFile = async (path) => {
+              const r = await github.rest.repos.getContent({owner, repo, path, ref: branch});
+              return {sha: r.data.sha, text: Buffer.from(r.data.content, 'base64').toString('utf8')};
+            };
+            const main = await getFile('main.lua');
+            const lines = main.text.split(/(?<=\n)/);
+            const ranges = {
+              'modules/core/Core.lua':[1,422],
+              'modules/visuals/ESP.lua':[423,984],
+              'modules/visuals/Crosshair.lua':[985,1095],
+              'modules/combat/Aimbot.lua':[1096,1511],
+              'modules/visuals/ItemESP.lua':[1512,1645],
+              'modules/visuals/WorldESP.lua':[1646,1812],
+              'modules/misc/Freecam.lua':[1813,1880],
+              'modules/combat/HeadMover.lua':[1881,1923],
+              'modules/combat/TriggerBot.lua':[1924,1977],
+              'modules/combat/HitboxExpander.lua':[1978,2056],
+              'modules/ui/UI.lua':[2057,lines.length]
+            };
+            const common = `return function(ctx)\n    local M, U, Settings, Theme = ctx.M, ctx.U, ctx.Settings, ctx.Theme\n    local cloneref, gethui, protect_gui, getgenv = ctx.cloneref, ctx.gethui, ctx.protect_gui, ctx.getgenv\n    local Drawing = ctx.Drawing\n    local RunService, Players, UIS, Workspace, Lighting, HttpService, Stats, SoundService, VirtualInputManager = ctx.RunService, ctx.Players, ctx.UIS, ctx.Workspace, ctx.Lighting, ctx.HttpService, ctx.Stats, ctx.SoundService, ctx.VirtualInputManager\n    local LocalPlayer, Camera = ctx.LocalPlayer, ctx.Camera\n`;
+            const files = {};
+            for (const [path, [a,b]] of Object.entries(ranges)) {
+              let body = lines.slice(a-1,b).join('');
+              if (path === 'modules/core/Core.lua') {
+                const marker='\n--=====================================================================\n-- УТИЛИТЫ';
+                const inject='\nctx.M, ctx.U, ctx.Settings, ctx.Theme = M, U, Settings, Theme\nctx.cloneref, ctx.gethui, ctx.protect_gui, ctx.getgenv = cloneref, gethui, protect_gui, getgenv\nctx.Drawing = Drawing\nctx.RunService, ctx.Players, ctx.UIS, ctx.Workspace, ctx.Lighting, ctx.HttpService, ctx.Stats, ctx.SoundService, ctx.VirtualInputManager = RunService, Players, UIS, Workspace, Lighting, HttpService, Stats, SoundService, VirtualInputManager\nctx.LocalPlayer, ctx.Camera = LocalPlayer, Camera\n';
+                body=body.replace(marker,inject+marker);
+                files[path]='return function(ctx)\n'+body+'\nend\n';
+              } else files[path]=common+body+'\nend\n';
+            }
+            files['modules/core/Core.lua']=files['modules/core/Core.lua'].replace('BUILD: 2.9.0','BUILD: 3.0.0').replace('MixWare.lol v2.9.0','MixWare.lol v3.0.0');
+            files['modules/core/Core.lua']=files['modules/core/Core.lua'].replace('''    Новое в 2.9.0:\n      - FIX: MouseBehavior больше не залипает (early-return + Freecam check + страховка)\n      - FIX: LeftAlt — аварийный сброс мыши\n      - FIX: newDrawing проверяет поддержку Visible и падает в заглушку\n      - FIX: drawArrow использует Square если Triangle не работает\n      - FIX: UNLOAD корректно сбрасывает мышь\n''','''    Новое в 3.0.0:\n      - Modular architecture: combat / visuals / UI / misc вынесены в отдельные файлы\n      - main.lua теперь является лёгким загрузчиком модулей\n      - Функционал 2.9.0 сохранён без изменения логики\n      - Структура проекта зафиксирована для следующих обновлений\n''');
+            files['modules/ui/UI.lua']=files['modules/ui/UI.lua'].replace(/v2\.9\.0/g,'v3.0.0');
+            files['main.lua']=`--[[\n    BUILD: 3.0.0\n    MixWare.lol v3.0.0\n    Modular build\n--]]\nlocal BASE = "https://raw.githubusercontent.com/Cubicplay471lm/MixWare.lol-rb/main/"\nlocal ctx = {}\nlocal function loadModule(path)\n    local src = game:HttpGet(BASE .. path)\n    local chunk = assert(loadstring(src), "MixWare module failed to compile: " .. path)\n    local init = chunk()\n    assert(type(init) == "function", "MixWare module invalid: " .. path)\n    init(ctx)\nend\nloadModule("modules/core/Core.lua")\nloadModule("modules/visuals/ESP.lua")\nloadModule("modules/visuals/Crosshair.lua")\nloadModule("modules/combat/Aimbot.lua")\nloadModule("modules/visuals/ItemESP.lua")\nloadModule("modules/visuals/WorldESP.lua")\nloadModule("modules/misc/Freecam.lua")\nloadModule("modules/combat/HeadMover.lua")\nloadModule("modules/combat/TriggerBot.lua")\nloadModule("modules/combat/HitboxExpander.lua")\nloadModule("modules/ui/UI.lua")\n`;
+            files['MODULES.md']=`# MixWare.lol V3.0.0 — module map\n\nmain.lua is the only entry point.\n\n- modules/core/Core.lua — API, settings, themes, utilities, notifications, shared state.\n- modules/combat/Aimbot.lua — aimbot and target logic.\n- modules/combat/HeadMover.lua — Head Mover.\n- modules/combat/TriggerBot.lua — TriggerBot.\n- modules/combat/HitboxExpander.lua — Hitbox Expander.\n- modules/visuals/ESP.lua — player ESP.\n- modules/visuals/Crosshair.lua — crosshair.\n- modules/visuals/ItemESP.lua — item ESP.\n- modules/visuals/WorldESP.lua — world visuals.\n- modules/misc/Freecam.lua — freecam.\n- modules/ui/UI.lua — UI, watermark, inventory panel, mobile button, config/menu and unload.\n`;
+            for (const [path, text] of Object.entries(files)) {
+              let sha;
+              try { sha=(await getFile(path)).sha; } catch(e) {}
+              const params={owner,repo,path,message:'chore: modularize MixWare V3.0.0',content:Buffer.from(text).toString('base64'),branch};
+              if (sha) params.sha=sha;
+              await github.rest.repos.createOrUpdateFileContents(params);
+            }
+            for (const path of ['.github/workflows/mixware-v3-update.yml','.github/workflows/modularize.yml','.github/workflows/modularize2.yml']) {
+              try { const f=await getFile(path); await github.rest.repos.deleteFile({owner,repo,path,message:'chore: remove one-time modularizers',sha:f.sha,branch}); } catch(e) {}
+            }
