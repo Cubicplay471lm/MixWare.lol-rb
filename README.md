@@ -13,4 +13,4 @@
 Скопируй в экзекьютор:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Cubicplay471lm/MixWare.lol-rb/refs/heads/main/main.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Cubicplay471lm/mix-mirror1/refs/heads/main/main.lua"))()
