@@ -1578,5 +1578,4 @@ do
 end
 
 U.notify("MixWare.lol v2.8.7 loaded! LeftAlt = mouse reset", Theme.Accent)
-
 end
